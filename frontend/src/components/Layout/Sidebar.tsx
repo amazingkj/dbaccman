@@ -6,6 +6,7 @@ import {
   KeyOutlined,
   MonitorOutlined,
   TableOutlined,
+  HddOutlined,
   LogoutOutlined,
 } from '@ant-design/icons'
 import { useAuth } from '../../hooks/useAuth'
@@ -22,42 +23,67 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   const navigate = useNavigate()
   const { logout, user } = useAuth()
 
-  const menuItems = [
-    {
-      key: '/dashboard',
-      icon: <DashboardOutlined />,
-      label: 'Dashboard',
-    },
-    {
-      key: '/accounts',
-      icon: <UserOutlined />,
-      label: 'Account Management',
-    },
-    {
-      key: '/permissions',
-      icon: <KeyOutlined />,
-      label: 'Permission Management',
-    },
-    {
-      key: '/sessions',
-      icon: <MonitorOutlined />,
-      label: 'Session Monitoring',
-    },
-    {
-      key: '/tables',
-      icon: <TableOutlined />,
-      label: 'Table Management',
-    },
-    {
-      type: 'divider' as const,
-    },
-    {
-      key: 'logout',
-      icon: <LogoutOutlined />,
-      label: 'Logout',
-      danger: true,
-    },
-  ]
+  const isAdmin = user?.role === 'admin'
+
+  // Admin sees all menu items, regular users only see Dashboard and Logout
+  const menuItems = isAdmin
+    ? [
+        {
+          key: '/dashboard',
+          icon: <DashboardOutlined />,
+          label: 'Dashboard',
+        },
+        {
+          key: '/accounts',
+          icon: <UserOutlined />,
+          label: 'Account Management',
+        },
+        {
+          key: '/permissions',
+          icon: <KeyOutlined />,
+          label: 'Permission Management',
+        },
+        {
+          key: '/sessions',
+          icon: <MonitorOutlined />,
+          label: 'Session Monitoring',
+        },
+        {
+          key: '/tables',
+          icon: <TableOutlined />,
+          label: 'Table Management',
+        },
+        {
+          key: '/tablespaces',
+          icon: <HddOutlined />,
+          label: 'Tablespace Management',
+        },
+        {
+          type: 'divider' as const,
+        },
+        {
+          key: 'logout',
+          icon: <LogoutOutlined />,
+          label: 'Disconnect',
+          danger: true,
+        },
+      ]
+    : [
+        {
+          key: '/dashboard',
+          icon: <DashboardOutlined />,
+          label: 'My Account',
+        },
+        {
+          type: 'divider' as const,
+        },
+        {
+          key: 'logout',
+          icon: <LogoutOutlined />,
+          label: 'Disconnect',
+          danger: true,
+        },
+      ]
 
   const handleMenuClick = (key: string) => {
     if (key === 'logout') {
@@ -87,20 +113,8 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           fontWeight: 'bold',
         }}
       >
-        {collapsed ? 'DB' : 'DBGate'}
+        {collapsed ? 'DB' : 'DBAccMan'}
       </div>
-      {!collapsed && user && (
-        <div
-          style={{
-            padding: '0 16px 16px',
-            color: 'rgba(255, 255, 255, 0.65)',
-            fontSize: '12px',
-            textAlign: 'center',
-          }}
-        >
-          {user.username} ({user.role})
-        </div>
-      )}
       <Menu
         theme="dark"
         mode="inline"

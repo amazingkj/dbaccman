@@ -1,5 +1,7 @@
 // Auth Types
 export interface LoginRequest {
+  host: string
+  port: number
   username: string
   password: string
 }
@@ -7,12 +9,32 @@ export interface LoginRequest {
 export interface LoginResponse {
   token: string
   username: string
-  role: string
+  role: 'admin' | 'user'
+  host: string
+  port: number
+  passwordExpiryDays: number | null
 }
 
 export interface User {
   username: string
-  role: string
+  role: 'admin' | 'user'
+  host: string
+  port: number
+}
+
+export interface RecentConnection {
+  host: string
+  port: number
+  username: string
+  lastUsed: string
+}
+
+export interface PasswordExpiryInfo {
+  username: string
+  host: string
+  daysUntilExpiry: number | null
+  passwordLastChanged: string | null
+  isExpired: boolean
 }
 
 // Account Types
@@ -103,6 +125,28 @@ export interface DashboardStats {
   activeSessions: number
   expiringSoon: number
   slowQueries: number
+}
+
+// Tablespace Types
+export interface TablespaceInfo {
+  name: string
+  spaceType: string
+  fileSize: number
+  allocatedSize: number
+  state: string
+  filePath?: string
+}
+
+export interface CreateTablespaceRequest {
+  name: string
+  dataFile?: string
+  engine?: string
+}
+
+export interface TableLocationRequest {
+  database: string
+  tableName: string
+  tablespaceName: string
 }
 
 // API Response Types

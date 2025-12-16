@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { User } from '../types'
+import type { User, LoginResponse } from '../types'
 
 interface AuthState {
   token: string | null
   user: User | null
+  passwordExpiryDays: number | null
   isAuthenticated: boolean
-  setAuth: (token: string, user: User) => void
+  setAuth: (response: LoginResponse) => void
   logout: () => void
 }
 
@@ -15,17 +16,25 @@ export const useAuthStore = create<AuthState>()(
     (set) => ({
       token: null,
       user: null,
+      passwordExpiryDays: null,
       isAuthenticated: false,
-      setAuth: (token: string, user: User) =>
+      setAuth: (response: LoginResponse) =>
         set({
-          token,
-          user,
+          token: response.token,
+          user: {
+            username: response.username,
+            role: response.role,
+            host: response.host,
+            port: response.port,
+          },
+          passwordExpiryDays: response.passwordExpiryDays,
           isAuthenticated: true,
         }),
       logout: () =>
         set({
           token: null,
           user: null,
+          passwordExpiryDays: null,
           isAuthenticated: false,
         }),
     }),

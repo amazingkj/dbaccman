@@ -1,1 +1,1 @@
-rootProject.name = "dbgate-backend"
+rootProject.name = "dbaccman-backend"

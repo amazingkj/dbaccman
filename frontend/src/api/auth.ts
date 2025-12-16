@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { LoginRequest, LoginResponse, User } from '../types'
+import type { LoginRequest, LoginResponse, User, PasswordExpiryInfo } from '../types'
 
 export const authApi = {
   login: (data: LoginRequest) =>
@@ -10,4 +10,7 @@ export const authApi = {
 
   me: () =>
     apiClient.get<User>('/auth/me'),
+
+  getPasswordExpiry: () =>
+    apiClient.get<PasswordExpiryInfo>('/auth/password-expiry'),
 }

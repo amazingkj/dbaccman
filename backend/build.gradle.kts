@@ -4,7 +4,7 @@ plugins {
     application
 }
 
-group = "com.dbgate"
+group = "com.dbaccman"
 version = "1.0.0"
 
 repositories {
@@ -43,7 +43,7 @@ dependencies {
 }
 
 application {
-    mainClass.set("com.dbgate.ApplicationKt")
+    mainClass.set("com.dbaccman.ApplicationKt")
 }
 
 tasks.test {

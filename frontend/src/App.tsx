@@ -7,6 +7,7 @@ import Accounts from './pages/Accounts'
 import Permissions from './pages/Permissions'
 import Sessions from './pages/Sessions'
 import Tables from './pages/Tables'
+import Tablespaces from './pages/Tablespaces'
 
 function App() {
   return (
@@ -26,6 +27,7 @@ function App() {
         <Route path="permissions" element={<Permissions />} />
         <Route path="sessions" element={<Sessions />} />
         <Route path="tables" element={<Tables />} />
+        <Route path="tablespaces" element={<Tablespaces />} />
       </Route>
     </Routes>
   )

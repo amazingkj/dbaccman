@@ -7,9 +7,9 @@
     </appender>
 
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
-        <file>logs/dbgate.log</file>
+        <file>logs/dbaccman.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <fileNamePattern>logs/dbgate.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <fileNamePattern>logs/dbaccman.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory>
         </rollingPolicy>
         <encoder>
@@ -28,15 +28,17 @@
         </encoder>
     </appender>
 
-    <logger name="com.dbgate" level="DEBUG"/>
-    <logger name="com.dbgate.util.AuditLogger" level="INFO" additivity="false">
+    <logger name="com.dbaccman" level="DEBUG">
+        <appender-ref ref="FILE"/>
+    </logger>
+    <logger name="com.dbaccman.util.AuditLogger" level="INFO" additivity="false">
         <appender-ref ref="AUDIT"/>
         <appender-ref ref="STDOUT"/>
     </logger>
-    <logger name="io.ktor" level="INFO"/>
-    <logger name="com.zaxxer.hikari" level="INFO"/>
+    <logger name="io.ktor" level="DEBUG"/>
+    <logger name="com.zaxxer.hikari" level="DEBUG"/>
 
-    <root level="INFO">
+    <root level="DEBUG">
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="FILE"/>
     </root>

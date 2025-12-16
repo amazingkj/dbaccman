@@ -22,9 +22,11 @@ import {
   ReloadOutlined,
   RightOutlined,
 } from '@ant-design/icons'
+import { useAuthStore } from '../store/authStore'
 import { accountsApi } from '../api/accounts'
 import { sessionsApi } from '../api/sessions'
 import { tablesApi } from '../api/tables'
+import UserDashboard from './UserDashboard'
 import type { ExpiringAccount, SessionInfo, DatabaseInfo } from '../types'
 
 const { Title, Text } = Typography
@@ -38,7 +40,7 @@ interface DashboardStats {
   totalTables: number
 }
 
-function Dashboard() {
+function AdminDashboard() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats>({
@@ -311,6 +313,16 @@ function Dashboard() {
       </Row>
     </div>
   )
+}
+
+function Dashboard() {
+  const { user } = useAuthStore()
+
+  if (user?.role === 'admin') {
+    return <AdminDashboard />
+  }
+
+  return <UserDashboard />
 }
 
 export default Dashboard
