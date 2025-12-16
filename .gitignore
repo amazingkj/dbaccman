@@ -1,0 +1,81 @@
+# === Backend (Kotlin/Gradle) ===
+
+# Compiled class files
+*.class
+
+# Log files
+*.log
+logs/
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+out/
+
+# IDE - Eclipse
+.classpath
+.project
+.settings/
+
+# IDE - VS Code
+.vscode/
+
+# === Frontend (Node.js/React) ===
+
+# Dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# Build output
+dist/
+dist-ssr/
+*.local
+
+# Cache
+.cache/
+.parcel-cache/
+
+# === OS Generated ===
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# === Environment & Secrets ===
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.pem
+*.key
+
+# === Test & Coverage ===
+coverage/
+.nyc_output/
+*.lcov
+
+# === Misc ===
+*.swp
+*.swo
+*.bak
+*.tmp
+*.temp
