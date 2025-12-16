@@ -4,6 +4,7 @@ import com.dbgate.model.ChangePasswordRequest
 import com.dbgate.model.CreateAccountRequest
 import com.dbgate.service.AccountService
 import io.ktor.http.*
+import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
@@ -14,99 +15,66 @@ fun Route.accountRoutes() {
 
     route("/accounts") {
         authenticate("auth-jwt") {
-            // Get all accounts
             get {
                 try {
                     val accounts = accountService.getAllAccounts()
                     call.respond(accounts)
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.InternalServerError,
-                        mapOf("error" to (e.message ?: "Failed to fetch accounts"))
-                    )
+                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "Failed to fetch accounts")))
                 }
             }
 
-            // Create new account
             post {
                 try {
                     val request = call.receive<CreateAccountRequest>()
                     val account = accountService.createAccount(request)
                     call.respond(HttpStatusCode.Created, account)
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to (e.message ?: "Failed to create account"))
-                    )
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Failed to create account")))
                 }
             }
 
-            // Get expiring accounts
             get("/expiring") {
                 try {
                     val days = call.request.queryParameters["days"]?.toIntOrNull() ?: 30
                     val accounts = accountService.getExpiringAccounts(days)
                     call.respond(accounts)
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.InternalServerError,
-                        mapOf("error" to (e.message ?: "Failed to fetch expiring accounts"))
-                    )
+                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "Failed to fetch expiring accounts")))
                 }
             }
 
-            // Change password
             put("/{userAtHost}/password") {
                 try {
-                    val userAtHost = call.parameters["userAtHost"]
-                        ?: return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User not specified"))
-
+                    val userAtHost = call.parameters["userAtHost"] ?: return@put call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User not specified"))
                     val (username, host) = parseUserAtHost(userAtHost)
                     val request = call.receive<ChangePasswordRequest>()
-
                     accountService.changePassword(username, host, request.password)
                     call.respond(mapOf("message" to "Password changed successfully"))
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to (e.message ?: "Failed to change password"))
-                    )
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Failed to change password")))
                 }
             }
 
-            // Delete account
             delete("/{userAtHost}") {
                 try {
-                    val userAtHost = call.parameters["userAtHost"]
-                        ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User not specified"))
-
+                    val userAtHost = call.parameters["userAtHost"] ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User not specified"))
                     val (username, host) = parseUserAtHost(userAtHost)
-
                     accountService.deleteAccount(username, host)
                     call.respond(mapOf("message" to "Account deleted successfully"))
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to (e.message ?: "Failed to delete account"))
-                    )
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Failed to delete account")))
                 }
             }
 
-            // Unlock account
             post("/{userAtHost}/unlock") {
                 try {
-                    val userAtHost = call.parameters["userAtHost"]
-                        ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User not specified"))
-
+                    val userAtHost = call.parameters["userAtHost"] ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User not specified"))
                     val (username, host) = parseUserAtHost(userAtHost)
-
                     accountService.unlockAccount(username, host)
                     call.respond(mapOf("message" to "Account unlocked successfully"))
                 } catch (e: Exception) {
-                    call.respond(
-                        HttpStatusCode.BadRequest,
-                        mapOf("error" to (e.message ?: "Failed to unlock account"))
-                    )
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Failed to unlock account")))
                 }
             }
         }
@@ -115,9 +83,5 @@ fun Route.accountRoutes() {
 
 private fun parseUserAtHost(userAtHost: String): Pair<String, String> {
     val parts = userAtHost.split("@")
-    return if (parts.size == 2) {
-        Pair(parts[0], parts[1])
-    } else {
-        Pair(userAtHost, "%")
-    }
+    return if (parts.size == 2) Pair(parts[0], parts[1]) else Pair(userAtHost, "%")
 }

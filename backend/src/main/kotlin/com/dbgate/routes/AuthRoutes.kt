@@ -7,6 +7,7 @@ import com.dbgate.service.AccountService
 import com.dbgate.util.AuditLogger
 import com.dbgate.util.JwtUtil
 import io.ktor.http.*
+import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
@@ -19,15 +20,11 @@ fun Route.authRoutes() {
     route("/auth") {
         post("/login") {
             val request = call.receive<LoginRequest>()
-
-            // Validate credentials
             val isValid = accountService.validateCredentials(request.username, request.password)
 
             if (isValid) {
                 val token = JwtUtil.generateToken(request.username, "admin")
-
                 AuditLogger.log("LOGIN", "User ${request.username} logged in successfully")
-
                 call.respond(
                     LoginResponse(
                         token = token,
@@ -42,8 +39,6 @@ fun Route.authRoutes() {
         }
 
         post("/logout") {
-            // JWT is stateless, so logout is handled client-side
-            // We just log the action
             AuditLogger.log("LOGOUT", "User logged out")
             call.respond(mapOf("message" to "Logged out successfully"))
         }
