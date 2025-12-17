@@ -1,6 +1,8 @@
 package com.dbaccman.util
 
 import com.dbaccman.config.SessionConnectionManager
+import com.dbaccman.dialect.DatabaseDialect
+import com.dbaccman.dialect.DatabaseType
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
@@ -57,10 +59,28 @@ fun ApplicationCall.getDbPort(): Int {
 }
 
 /**
+ * Extension function to get database type from JWT principal.
+ */
+fun ApplicationCall.getDbType(): DatabaseType {
+    val principal = principal<JWTPrincipal>()
+        ?: throw IllegalStateException("No JWT principal found")
+    val dbTypeName = principal.payload.getClaim("dbType").asString()
+        ?: return DatabaseType.MYSQL  // Default for backward compatibility
+    return DatabaseType.valueOf(dbTypeName)
+}
+
+/**
  * Extension function to check if the current user is admin.
  */
 fun ApplicationCall.isAdmin(): Boolean {
     return getRole() == "admin"
+}
+
+/**
+ * Extension function to get the dialect for the current session.
+ */
+fun ApplicationCall.getDialect(): DatabaseDialect {
+    return SessionConnectionManager.getDialect(getSessionId())
 }
 
 /**
@@ -76,4 +96,12 @@ fun ApplicationCall.getConnection(): Connection {
  */
 inline fun <T> ApplicationCall.useConnection(block: (Connection) -> T): T {
     return getConnection().use(block)
+}
+
+/**
+ * Extension function to execute a block with the session's connection and dialect.
+ */
+inline fun <T> ApplicationCall.useConnectionWithDialect(block: (Connection, DatabaseDialect) -> T): T {
+    val dialect = getDialect()
+    return getConnection().use { conn -> block(conn, dialect) }
 }

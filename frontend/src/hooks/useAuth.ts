@@ -1,9 +1,11 @@
 import { useNavigate } from 'react-router-dom'
 import { message } from 'antd'
+import { AxiosError } from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useConnectionStore } from '../store/connectionStore'
 import { authApi } from '../api/auth'
-import type { LoginRequest } from '../types'
+import type { LoginRequest, ApiError } from '../types'
+import { DATABASE_TYPES } from '../types'
 
 export function useAuth() {
   const navigate = useNavigate()
@@ -15,22 +17,27 @@ export function useAuth() {
       const response = await authApi.login(credentials)
       const data = response.data
 
-      localStorage.setItem('token', data.token)
       setAuth(data)
 
       // Save to recent connections
       addRecentConnection({
         host: credentials.host,
-        port: credentials.port,
+        port: credentials.port || data.port,
         username: credentials.username,
+        dbType: credentials.dbType,
+        database: credentials.database,
       })
 
-      message.success(`Connected to ${data.host}:${data.port} as ${data.username}`)
+      const dbTypeLabel = DATABASE_TYPES.find(t => t.value === data.dbType)?.label || data.dbType
+      message.success(`Connected to ${data.host}:${data.port} (${dbTypeLabel}) as ${data.username}`)
       navigate('/dashboard')
-    } catch (error: unknown) {
-      const err = error as { response?: { data?: { error?: string } } }
-      const errorMsg = err.response?.data?.error || 'Connection failed. Please check your credentials.'
-      message.error(errorMsg)
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const errorMsg = (error.response?.data as ApiError)?.error || 'Connection failed. Please check your credentials.'
+        message.error(errorMsg)
+      } else {
+        message.error('Connection failed. Please check your credentials.')
+      }
       throw error
     }
   }
@@ -41,7 +48,6 @@ export function useAuth() {
     } catch {
       // Ignore logout errors
     }
-    localStorage.removeItem('token')
     clearAuth()
     message.info('Disconnected')
     navigate('/login')

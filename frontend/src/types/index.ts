@@ -1,9 +1,25 @@
+// Database Types
+export type DatabaseType = 'MYSQL' | 'ORACLE' | 'POSTGRESQL'
+
+export const DATABASE_TYPES: { value: DatabaseType; label: string; defaultPort: number }[] = [
+  { value: 'MYSQL', label: 'MySQL', defaultPort: 3306 },
+  { value: 'ORACLE', label: 'Oracle', defaultPort: 1521 },
+  { value: 'POSTGRESQL', label: 'PostgreSQL', defaultPort: 5432 },
+]
+
+export const getDefaultPort = (dbType: DatabaseType): number => {
+  const found = DATABASE_TYPES.find(t => t.value === dbType)
+  return found?.defaultPort ?? 3306
+}
+
 // Auth Types
 export interface LoginRequest {
   host: string
-  port: number
+  port?: number
   username: string
   password: string
+  dbType: DatabaseType
+  database?: string
 }
 
 export interface LoginResponse {
@@ -12,6 +28,7 @@ export interface LoginResponse {
   role: 'admin' | 'user'
   host: string
   port: number
+  dbType: DatabaseType
   passwordExpiryDays: number | null
 }
 
@@ -20,12 +37,15 @@ export interface User {
   role: 'admin' | 'user'
   host: string
   port: number
+  dbType: DatabaseType
 }
 
 export interface RecentConnection {
   host: string
   port: number
   username: string
+  dbType: DatabaseType
+  database?: string
   lastUsed: string
 }
 

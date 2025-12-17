@@ -5,13 +5,16 @@ import com.dbaccman.model.MySQLPrivileges
 import com.dbaccman.model.RevokePermissionRequest
 import com.dbaccman.service.PermissionService
 import com.dbaccman.util.getSessionId
-import com.dbaccman.util.isAdmin
-import io.ktor.http.*
+import com.dbaccman.util.handleAdminRoute
+import com.dbaccman.util.handleAdminMutationRoute
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("PermissionRoutes")
 
 fun Route.permissionRoutes() {
     val permissionService = PermissionService()
@@ -19,48 +22,31 @@ fun Route.permissionRoutes() {
     route("/permissions") {
         authenticate("auth-jwt") {
             get("/{userAtHost}") {
-                try {
-                    if (!call.isAdmin()) {
-                        call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Admin access required"))
-                        return@get
-                    }
+                call.handleAdminRoute(logger, "Failed to fetch permissions") {
                     val sessionId = call.getSessionId()
-                    val userAtHost = call.parameters["userAtHost"] ?: return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "User not specified"))
+                    val userAtHost = call.parameters["userAtHost"]
+                        ?: throw IllegalArgumentException("User not specified")
                     val (username, host) = parseUserAtHostPerm(userAtHost)
                     val permissions = permissionService.getUserPermissions(sessionId, username, host)
                     call.respond(permissions)
-                } catch (e: Exception) {
-                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "Failed to fetch permissions")))
                 }
             }
 
             post("/grant") {
-                try {
-                    if (!call.isAdmin()) {
-                        call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Admin access required"))
-                        return@post
-                    }
+                call.handleAdminMutationRoute(logger, "Failed to grant permissions") {
                     val sessionId = call.getSessionId()
                     val request = call.receive<GrantPermissionRequest>()
                     permissionService.grantPermission(sessionId, request)
                     call.respond(mapOf("message" to "Permissions granted successfully"))
-                } catch (e: Exception) {
-                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Failed to grant permissions")))
                 }
             }
 
             post("/revoke") {
-                try {
-                    if (!call.isAdmin()) {
-                        call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Admin access required"))
-                        return@post
-                    }
+                call.handleAdminMutationRoute(logger, "Failed to revoke permissions") {
                     val sessionId = call.getSessionId()
                     val request = call.receive<RevokePermissionRequest>()
                     permissionService.revokePermission(sessionId, request)
                     call.respond(mapOf("message" to "Permissions revoked successfully"))
-                } catch (e: Exception) {
-                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to (e.message ?: "Failed to revoke permissions")))
                 }
             }
 
@@ -74,16 +60,10 @@ fun Route.permissionRoutes() {
             }
 
             get("/databases") {
-                try {
-                    if (!call.isAdmin()) {
-                        call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Admin access required"))
-                        return@get
-                    }
+                call.handleAdminRoute(logger, "Failed to fetch databases") {
                     val sessionId = call.getSessionId()
                     val databases = permissionService.getDatabases(sessionId)
                     call.respond(databases)
-                } catch (e: Exception) {
-                    call.respond(HttpStatusCode.InternalServerError, mapOf("error" to (e.message ?: "Failed to fetch databases")))
                 }
             }
         }

@@ -1,5 +1,8 @@
 package com.dbaccman.config
 
+import com.dbaccman.dialect.DatabaseDialect
+import com.dbaccman.dialect.DatabaseType
+import com.dbaccman.dialect.DialectFactory
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.slf4j.LoggerFactory
@@ -13,6 +16,8 @@ data class SessionPool(
     val host: String,
     val port: Int,
     val username: String,
+    val dbType: DatabaseType,
+    val dialect: DatabaseDialect,
     var lastAccess: Long = System.currentTimeMillis()
 )
 
@@ -46,25 +51,33 @@ object SessionConnectionManager {
     }
 
     /**
-     * Creates a new session with the given MySQL credentials.
+     * Creates a new session with the given database credentials.
      * Validates the connection before returning the session ID.
      */
-    fun createSession(host: String, port: Int, username: String, password: String): String {
+    fun createSession(
+        host: String,
+        port: Int,
+        username: String,
+        password: String,
+        dbType: DatabaseType = DatabaseType.MYSQL,
+        database: String? = null
+    ): String {
         val sessionId = UUID.randomUUID().toString()
-        val jdbcUrl = "jdbc:mysql://$host:$port?allowPublicKeyRetrieval=true&useSSL=false"
+        val dialect = DialectFactory.getDialect(dbType)
+        val jdbcUrl = dialect.getJdbcUrl(host, port, database)
 
         val config = HikariConfig().apply {
             this.jdbcUrl = jdbcUrl
             this.username = username
             this.password = password
-            driverClassName = "com.mysql.cj.jdbc.Driver"
+            driverClassName = dialect.getDriverClassName()
             maximumPoolSize = 5
             minimumIdle = 1
             isAutoCommit = true
             connectionTimeout = 10000 // 10 seconds
             idleTimeout = 300000 // 5 minutes
             maxLifetime = 900000 // 15 minutes
-            connectionTestQuery = "SELECT 1"
+            connectionTestQuery = dialect.getConnectionTestQuery()
             poolName = "session-$sessionId"
         }
 
@@ -74,7 +87,7 @@ object SessionConnectionManager {
         try {
             dataSource.connection.use { conn ->
                 conn.createStatement().use { stmt ->
-                    stmt.execute("SELECT 1")
+                    stmt.execute(dialect.getConnectionTestQuery())
                 }
             }
         } catch (e: Exception) {
@@ -82,8 +95,15 @@ object SessionConnectionManager {
             throw e
         }
 
-        sessionPools[sessionId] = SessionPool(dataSource, host, port, username)
-        logger.info("Created session $sessionId for $username@$host:$port")
+        sessionPools[sessionId] = SessionPool(
+            dataSource = dataSource,
+            host = host,
+            port = port,
+            username = username,
+            dbType = dbType,
+            dialect = dialect
+        )
+        logger.info("Created session $sessionId for $username@$host:$port (${dbType.displayName})")
 
         return sessionId
     }
@@ -96,6 +116,24 @@ object SessionConnectionManager {
             ?: throw IllegalStateException("Session not found or expired: $sessionId")
         pool.lastAccess = System.currentTimeMillis()
         return pool.dataSource.connection
+    }
+
+    /**
+     * Gets the dialect for the session.
+     */
+    fun getDialect(sessionId: String): DatabaseDialect {
+        val pool = sessionPools[sessionId]
+            ?: throw IllegalStateException("Session not found or expired: $sessionId")
+        return pool.dialect
+    }
+
+    /**
+     * Gets the database type for the session.
+     */
+    fun getDatabaseType(sessionId: String): DatabaseType {
+        val pool = sessionPools[sessionId]
+            ?: throw IllegalStateException("Session not found or expired: $sessionId")
+        return pool.dbType
     }
 
     /**
@@ -119,7 +157,7 @@ object SessionConnectionManager {
         sessionPools.remove(sessionId)?.let { pool ->
             try {
                 pool.dataSource.close()
-                logger.info("Closed session $sessionId for ${pool.username}@${pool.host}:${pool.port}")
+                logger.info("Closed session $sessionId for ${pool.username}@${pool.host}:${pool.port} (${pool.dbType.displayName})")
             } catch (e: Exception) {
                 logger.error("Error closing session $sessionId", e)
             }
@@ -172,5 +210,15 @@ object SessionConnectionManager {
 inline fun <T> useSessionConnection(sessionId: String, block: (Connection) -> T): T {
     return SessionConnectionManager.getConnection(sessionId).use { conn ->
         block(conn)
+    }
+}
+
+/**
+ * Utility function to execute a block with a session's connection and dialect.
+ */
+inline fun <T> useSessionConnectionWithDialect(sessionId: String, block: (Connection, DatabaseDialect) -> T): T {
+    val dialect = SessionConnectionManager.getDialect(sessionId)
+    return SessionConnectionManager.getConnection(sessionId).use { conn ->
+        block(conn, dialect)
     }
 }

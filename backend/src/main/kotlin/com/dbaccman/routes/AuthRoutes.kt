@@ -1,9 +1,9 @@
 package com.dbaccman.routes
 
 import com.dbaccman.config.SessionConnectionManager
+import com.dbaccman.dialect.DatabaseType
 import com.dbaccman.model.ConnectionLoginRequest
 import com.dbaccman.model.ConnectionLoginResponse
-import com.dbaccman.model.PasswordExpiryInfo
 import com.dbaccman.service.PrivilegeService
 import com.dbaccman.util.AuditLogger
 import com.dbaccman.util.JwtUtil
@@ -12,10 +12,10 @@ import com.dbaccman.util.getUsername
 import com.dbaccman.util.getRole
 import com.dbaccman.util.getDbHost
 import com.dbaccman.util.getDbPort
+import com.dbaccman.util.getDbType
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
-import io.ktor.server.auth.jwt.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -26,17 +26,20 @@ fun Route.authRoutes() {
     route("/auth") {
         post("/login") {
             val request = call.receive<ConnectionLoginRequest>()
+            val effectivePort = request.getEffectivePort()
 
             try {
                 // Attempt to create a session with provided credentials
                 val sessionId = SessionConnectionManager.createSession(
                     host = request.host,
-                    port = request.port,
+                    port = effectivePort,
                     username = request.username,
-                    password = request.password
+                    password = request.password,
+                    dbType = request.dbType,
+                    database = request.database
                 )
 
-                // Detect user role based on MySQL privileges
+                // Detect user role based on database privileges
                 val role = privilegeService.detectRole(sessionId)
 
                 // Get password expiry days
@@ -48,12 +51,13 @@ fun Route.authRoutes() {
                     role = role,
                     sessionId = sessionId,
                     host = request.host,
-                    port = request.port
+                    port = effectivePort,
+                    dbType = request.dbType
                 )
 
                 AuditLogger.log(
                     "LOGIN",
-                    "User ${request.username} connected to ${request.host}:${request.port} as $role"
+                    "User ${request.username} connected to ${request.host}:$effectivePort (${request.dbType.displayName}) as $role"
                 )
 
                 call.respond(
@@ -62,32 +66,19 @@ fun Route.authRoutes() {
                         username = request.username,
                         role = role,
                         host = request.host,
-                        port = request.port,
+                        port = effectivePort,
+                        dbType = request.dbType,
                         passwordExpiryDays = passwordExpiryDays
                     )
                 )
             } catch (e: Exception) {
                 AuditLogger.log(
                     "LOGIN_FAILED",
-                    "Failed login for ${request.username}@${request.host}:${request.port} - ${e.message}"
+                    "Failed login for ${request.username}@${request.host}:$effectivePort (${request.dbType.displayName}) - ${e.message}"
                 )
 
-                // Translate MySQL errors to user-friendly messages
-                val errorMessage = when {
-                    e.message?.contains("Access denied") == true ->
-                        "Invalid username or password"
-                    e.message?.contains("Communications link failure") == true ->
-                        "Cannot connect to MySQL server at ${request.host}:${request.port}"
-                    e.message?.contains("Unknown host") == true ->
-                        "Unknown host: ${request.host}"
-                    e.message?.contains("Connection refused") == true ->
-                        "Connection refused. Check if MySQL is running on port ${request.port}"
-                    e.message?.contains("connect timed out") == true ->
-                        "Connection timed out. Server may be unreachable"
-                    else ->
-                        "Connection failed: ${e.message?.take(100) ?: "Unknown error"}"
-                }
-
+                // Translate database errors to user-friendly messages
+                val errorMessage = getConnectionErrorMessage(e, request.host, effectivePort, request.dbType)
                 call.respond(HttpStatusCode.Unauthorized, mapOf("error" to errorMessage))
             }
         }
@@ -114,6 +105,7 @@ fun Route.authRoutes() {
                     val role = call.getRole()
                     val host = call.getDbHost()
                     val port = call.getDbPort()
+                    val dbType = call.getDbType()
 
                     // Check if session is still valid
                     if (!SessionConnectionManager.hasSession(sessionId)) {
@@ -125,7 +117,8 @@ fun Route.authRoutes() {
                         "username" to username,
                         "role" to role,
                         "host" to host,
-                        "port" to port
+                        "port" to port,
+                        "dbType" to dbType.name
                     ))
                 } catch (e: Exception) {
                     call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid token"))
@@ -148,12 +141,68 @@ fun Route.authRoutes() {
                     val expiryInfo = privilegeService.getMyPasswordExpiry(sessionId, username, host)
                     call.respond(expiryInfo)
                 } catch (e: Exception) {
+                    AuditLogger.log("PASSWORD_EXPIRY_ERROR", "Failed for user: ${e.message}")
                     call.respond(
                         HttpStatusCode.InternalServerError,
-                        mapOf("error" to "Failed to get password expiry info")
+                        mapOf("error" to "Failed to get password expiry info: ${e.message?.take(100)}")
                     )
                 }
             }
         }
+    }
+}
+
+/**
+ * Translates database connection errors to user-friendly messages.
+ */
+private fun getConnectionErrorMessage(e: Exception, host: String, port: Int, dbType: DatabaseType): String {
+    val message = e.message ?: "Unknown error"
+
+    return when {
+        // MySQL errors
+        message.contains("Access denied") ->
+            "Invalid username or password"
+        message.contains("Communications link failure") ->
+            "Cannot connect to ${dbType.displayName} server at $host:$port. Check if the server is running."
+        message.contains("Unknown database") ->
+            "Database not found. Check the database/schema name."
+        message.contains("Unknown host") ->
+            "Unknown host: $host"
+        message.contains("Connection refused") ->
+            "Connection refused. Check if ${dbType.displayName} is running on $host:$port"
+        message.contains("connect timed out") ->
+            "Connection timed out. Server at $host:$port may be unreachable."
+
+        // Oracle errors
+        message.contains("ORA-01017") ->
+            "Invalid username or password"
+        message.contains("ORA-12541") ->
+            "No listener. Check if Oracle listener is running on $host:$port"
+        message.contains("ORA-12514") ->
+            "Service not found. The specified service name is not registered with the listener on $host:$port. Check your Oracle SID/Service Name."
+        message.contains("ORA-12505") ->
+            "SID not found. The specified SID is not recognized by the listener on $host:$port"
+        message.contains("ORA-12170") ->
+            "Connection timeout. Cannot reach Oracle server at $host:$port"
+        message.contains("ORA-28000") ->
+            "Account is locked. Contact your DBA to unlock the account."
+        message.contains("ORA-28001") ->
+            "Password has expired. Please change your password."
+
+        // PostgreSQL errors
+        message.contains("FATAL: password authentication failed") ->
+            "Invalid username or password"
+        message.contains("FATAL: database") && message.contains("does not exist") ->
+            "Database not found. Check the database name."
+        message.contains("FATAL: role") && message.contains("does not exist") ->
+            "User not found. Check the username."
+        message.contains("Connection to $host:$port refused") || message.contains("Connection refused") ->
+            "Connection refused. Check if ${dbType.displayName} is running on $host:$port"
+        message.contains("The connection attempt failed") ->
+            "Cannot connect to ${dbType.displayName} server at $host:$port"
+
+        // Generic - show more detail for debugging
+        else ->
+            "Connection failed: ${message.take(200)}"
     }
 }

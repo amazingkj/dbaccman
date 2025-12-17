@@ -15,6 +15,8 @@ val ktorVersion = "2.3.7"
 val logbackVersion = "1.4.11"
 val hikariVersion = "5.0.1"
 val mysqlVersion = "8.0.33"
+val postgresVersion = "42.7.1"
+val oracleVersion = "23.3.0.23.09"
 
 dependencies {
     // Ktor Server
@@ -28,8 +30,10 @@ dependencies {
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
 
-    // Database
+    // Database Drivers
     implementation("mysql:mysql-connector-java:$mysqlVersion")
+    implementation("org.postgresql:postgresql:$postgresVersion")
+    implementation("com.oracle.database.jdbc:ojdbc11:$oracleVersion")
     implementation("com.zaxxer:HikariCP:$hikariVersion")
 
     // Logging
