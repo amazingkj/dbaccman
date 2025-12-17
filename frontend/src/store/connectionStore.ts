@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { RecentConnection } from '../types'
+import type { RecentConnection, DatabaseType } from '../types'
 
 const MAX_RECENT_CONNECTIONS = 10
 
@@ -30,6 +30,7 @@ export const useConnectionStore = create<ConnectionState>()(
         // Add new connection at the beginning
         const newConnection: RecentConnection = {
           ...connection,
+          dbType: connection.dbType || 'MYSQL',
           lastUsed: new Date().toISOString(),
         }
 

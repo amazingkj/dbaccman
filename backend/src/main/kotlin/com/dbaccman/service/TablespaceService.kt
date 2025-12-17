@@ -1,6 +1,6 @@
 package com.dbaccman.service
 
-import com.dbaccman.config.useSessionConnection
+import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.model.TablespaceInfo
 import com.dbaccman.model.CreateTablespaceRequest
 import com.dbaccman.model.TableLocationRequest
@@ -10,17 +10,8 @@ import com.dbaccman.util.AuditLogger
 class TablespaceService {
 
     fun getTablespaces(sessionId: String): List<TablespaceInfo> {
-        return useSessionConnection(sessionId) { conn ->
-            val sql = """
-                SELECT
-                    NAME as name,
-                    SPACE_TYPE as space_type,
-                    FILE_SIZE as file_size,
-                    ALLOCATED_SIZE as allocated_size,
-                    STATE as state
-                FROM information_schema.INNODB_TABLESPACES
-                ORDER BY NAME
-            """.trimIndent()
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getTablespacesQuery()
 
             conn.createStatement().use { stmt ->
                 stmt.executeQuery(sql).use { rs ->
@@ -43,9 +34,8 @@ class TablespaceService {
     }
 
     fun createTablespace(sessionId: String, request: CreateTablespaceRequest) {
-        useSessionConnection(sessionId) { conn ->
-            val dataFile = request.dataFile ?: "${request.name}.ibd"
-            val sql = "CREATE TABLESPACE `${request.name}` ADD DATAFILE '$dataFile' ENGINE=${request.engine}"
+        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getCreateTablespaceSql(request.name, request.dataFile, request.engine)
 
             conn.createStatement().use { stmt ->
                 stmt.execute(sql)
@@ -56,8 +46,8 @@ class TablespaceService {
     }
 
     fun dropTablespace(sessionId: String, name: String) {
-        useSessionConnection(sessionId) { conn ->
-            val sql = "DROP TABLESPACE `$name`"
+        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getDropTablespaceSql(name)
 
             conn.createStatement().use { stmt ->
                 stmt.execute(sql)
@@ -68,24 +58,8 @@ class TablespaceService {
     }
 
     fun getTablesInTablespace(sessionId: String, tablespaceName: String): List<TableInfo> {
-        return useSessionConnection(sessionId) { conn ->
-            val sql = """
-                SELECT
-                    t.TABLE_SCHEMA as db_name,
-                    t.TABLE_NAME as table_name,
-                    t.ENGINE as engine,
-                    IFNULL(t.TABLE_ROWS, 0) as `rows`,
-                    IFNULL(t.DATA_LENGTH + t.INDEX_LENGTH, 0) as size,
-                    DATE_FORMAT(t.CREATE_TIME, '%Y-%m-%d %H:%i:%s') as create_time
-                FROM information_schema.TABLES t
-                JOIN information_schema.INNODB_TABLES it
-                    ON CONCAT(t.TABLE_SCHEMA, '/', t.TABLE_NAME) = it.NAME
-                JOIN information_schema.INNODB_TABLESPACES ts
-                    ON it.SPACE = ts.SPACE
-                WHERE ts.NAME = ?
-                AND t.TABLE_TYPE = 'BASE TABLE'
-                ORDER BY t.TABLE_SCHEMA, t.TABLE_NAME
-            """.trimIndent()
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getTablesInTablespaceQuery()
 
             conn.prepareStatement(sql).use { stmt ->
                 stmt.setString(1, tablespaceName)
@@ -109,8 +83,8 @@ class TablespaceService {
     }
 
     fun moveTableToTablespace(sessionId: String, request: TableLocationRequest) {
-        useSessionConnection(sessionId) { conn ->
-            val sql = "ALTER TABLE `${request.database}`.`${request.tableName}` TABLESPACE = `${request.tablespaceName}`"
+        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getMoveTableToTablespaceSql(request.database, request.tableName, request.tablespaceName)
 
             conn.createStatement().use { stmt ->
                 stmt.execute(sql)

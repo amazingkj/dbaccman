@@ -1,27 +1,48 @@
 package com.dbaccman.service
 
-import com.dbaccman.config.useSessionConnection
+import com.dbaccman.config.useSessionConnectionWithDialect
+import com.dbaccman.dialect.DatabaseType
 import com.dbaccman.model.PasswordExpiryInfo
 
 class PrivilegeService {
 
     /**
-     * Checks if the current session user has admin privileges (CREATE USER).
+     * Checks if the current session user has admin privileges.
+     * - MySQL: CREATE USER or ALL PRIVILEGES
+     * - Oracle: DBA role
+     * - PostgreSQL: superuser
      */
     fun isAdmin(sessionId: String): Boolean {
-        return useSessionConnection(sessionId) { conn ->
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             conn.createStatement().use { stmt ->
-                stmt.executeQuery("SHOW GRANTS FOR CURRENT_USER()").use { rs ->
-                    while (rs.next()) {
-                        val grant = rs.getString(1).uppercase()
-                        // Check for admin-level privileges
-                        if (grant.contains("ALL PRIVILEGES ON *.*") ||
-                            grant.contains("CREATE USER") ||
-                            (grant.contains("ALL PRIVILEGES") && grant.contains("WITH GRANT OPTION"))) {
-                            return@useSessionConnection true
+                stmt.executeQuery(dialect.getAdminCheckQuery()).use { rs ->
+                    when (dialect.type) {
+                        // Oracle: If DBA role exists in result, user is admin
+                        DatabaseType.ORACLE -> {
+                            if (rs.next()) {
+                                val role = rs.getString(1)?.uppercase() ?: ""
+                                role == "DBA"
+                            } else {
+                                false
+                            }
+                        }
+                        // PostgreSQL: If any row returned (superuser check), user is admin
+                        DatabaseType.POSTGRESQL -> {
+                            rs.next()
+                        }
+                        // MySQL: Check for admin-level privileges
+                        DatabaseType.MYSQL -> {
+                            while (rs.next()) {
+                                val grant = rs.getString(1).uppercase()
+                                if (grant.contains("ALL PRIVILEGES ON *.*") ||
+                                    grant.contains("CREATE USER") ||
+                                    (grant.contains("ALL PRIVILEGES") && grant.contains("WITH GRANT OPTION"))) {
+                                    return@useSessionConnectionWithDialect true
+                                }
+                            }
+                            false
                         }
                     }
-                    false
                 }
             }
         }
@@ -38,27 +59,8 @@ class PrivilegeService {
      * Gets password expiry information for the current user.
      */
     fun getMyPasswordExpiry(sessionId: String, username: String, host: String): PasswordExpiryInfo {
-        return useSessionConnection(sessionId) { conn ->
-            val sql = """
-                SELECT
-                    user,
-                    host,
-                    password_lifetime,
-                    password_last_changed,
-                    CASE
-                        WHEN password_expired = 'Y' THEN true
-                        ELSE false
-                    END as is_expired,
-                    CASE
-                        WHEN password_lifetime IS NULL OR password_lifetime = 0 THEN NULL
-                        ELSE DATEDIFF(
-                            DATE_ADD(password_last_changed, INTERVAL password_lifetime DAY),
-                            NOW()
-                        )
-                    END as days_until_expiry
-                FROM mysql.user
-                WHERE user = ? AND host = ?
-            """.trimIndent()
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getPasswordExpiryQuery()
 
             conn.prepareStatement(sql).use { stmt ->
                 stmt.setString(1, username)
@@ -75,7 +77,7 @@ class PrivilegeService {
                             isExpired = rs.getBoolean("is_expired")
                         )
                     } else {
-                        // If can't query mysql.user, return basic info
+                        // If can't query user table, return basic info
                         PasswordExpiryInfo(
                             username = username,
                             host = host,
@@ -95,20 +97,8 @@ class PrivilegeService {
      */
     fun getPasswordExpiryDays(sessionId: String, username: String): Int? {
         return try {
-            useSessionConnection(sessionId) { conn ->
-                val sql = """
-                    SELECT
-                        CASE
-                            WHEN password_lifetime IS NULL OR password_lifetime = 0 THEN NULL
-                            ELSE DATEDIFF(
-                                DATE_ADD(password_last_changed, INTERVAL password_lifetime DAY),
-                                NOW()
-                            )
-                        END as days_until_expiry
-                    FROM mysql.user
-                    WHERE user = ?
-                    LIMIT 1
-                """.trimIndent()
+            useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+                val sql = dialect.getPasswordExpiryDaysQuery()
 
                 conn.prepareStatement(sql).use { stmt ->
                     stmt.setString(1, username)
@@ -122,7 +112,7 @@ class PrivilegeService {
                 }
             }
         } catch (e: Exception) {
-            // User might not have permission to query mysql.user
+            // User might not have permission to query user table
             null
         }
     }

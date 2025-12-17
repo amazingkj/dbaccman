@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { User, LoginResponse } from '../types'
+import type { User, LoginResponse, DatabaseType } from '../types'
 
 interface AuthState {
   token: string | null
@@ -26,6 +26,7 @@ export const useAuthStore = create<AuthState>()(
             role: response.role,
             host: response.host,
             port: response.port,
+            dbType: response.dbType,
           },
           passwordExpiryDays: response.passwordExpiryDays,
           isAuthenticated: true,

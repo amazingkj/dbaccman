@@ -2,6 +2,7 @@ package com.dbaccman.util
 
 import com.auth0.jwt.JWT
 import com.dbaccman.config.JwtConfig
+import com.dbaccman.dialect.DatabaseType
 import java.util.*
 
 object JwtUtil {
@@ -10,7 +11,8 @@ object JwtUtil {
         role: String = "user",
         sessionId: String,
         host: String,
-        port: Int
+        port: Int,
+        dbType: DatabaseType = DatabaseType.MYSQL
     ): String {
         return JWT.create()
             .withAudience(JwtConfig.audience)
@@ -20,6 +22,7 @@ object JwtUtil {
             .withClaim("sessionId", sessionId)
             .withClaim("dbHost", host)
             .withClaim("dbPort", port)
+            .withClaim("dbType", dbType.name)
             .withExpiresAt(Date(System.currentTimeMillis() + JwtConfig.expirationMs))
             .sign(JwtConfig.algorithm)
     }
@@ -73,6 +76,16 @@ object JwtUtil {
         return try {
             val jwt = JwtConfig.verifier.verify(token)
             jwt.getClaim("dbPort").asInt()
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun getDbTypeFromToken(token: String): DatabaseType? {
+        return try {
+            val jwt = JwtConfig.verifier.verify(token)
+            val dbTypeName = jwt.getClaim("dbType").asString()
+            dbTypeName?.let { DatabaseType.valueOf(it) }
         } catch (e: Exception) {
             null
         }
