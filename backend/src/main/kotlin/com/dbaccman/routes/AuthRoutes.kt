@@ -13,6 +13,7 @@ import com.dbaccman.util.getRole
 import com.dbaccman.util.getDbHost
 import com.dbaccman.util.getDbPort
 import com.dbaccman.util.getDbType
+import com.dbaccman.util.getClientIp
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
@@ -27,6 +28,7 @@ fun Route.authRoutes() {
         post("/login") {
             val request = call.receive<ConnectionLoginRequest>()
             val effectivePort = request.getEffectivePort()
+            val clientIp = call.getClientIp()
 
             try {
                 // Attempt to create a session with provided credentials
@@ -56,8 +58,10 @@ fun Route.authRoutes() {
                 )
 
                 AuditLogger.log(
-                    "LOGIN",
-                    "User ${request.username} connected to ${request.host}:$effectivePort (${request.dbType.displayName}) as $role"
+                    action = "LOGIN",
+                    message = "Connected to ${request.host}:$effectivePort (${request.dbType.displayName}) as $role",
+                    user = request.username,
+                    ipAddress = clientIp
                 )
 
                 call.respond(
@@ -73,8 +77,10 @@ fun Route.authRoutes() {
                 )
             } catch (e: Exception) {
                 AuditLogger.log(
-                    "LOGIN_FAILED",
-                    "Failed login for ${request.username}@${request.host}:$effectivePort (${request.dbType.displayName}) - ${e.message}"
+                    action = "LOGIN_FAILED",
+                    message = "Failed to connect to ${request.host}:$effectivePort (${request.dbType.displayName}) - ${e.message}",
+                    user = request.username,
+                    ipAddress = clientIp
                 )
 
                 // Translate database errors to user-friendly messages

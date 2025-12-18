@@ -60,6 +60,7 @@ fun Application.module() {
             sessionRoutes()
             tableRoutes()
             tablespaceRoutes()
+            queryRoutes()
         }
 
         get("/health") {

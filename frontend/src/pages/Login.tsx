@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Form, Input, Button, Card, Typography, Space, Select, InputNumber, Divider } from 'antd'
+import { Form, Input, Button, Card, Typography, Space, Select, InputNumber, Divider, Alert } from 'antd'
 import { UserOutlined, LockOutlined, DatabaseOutlined, GlobalOutlined, DeleteOutlined } from '@ant-design/icons'
+import { AxiosError } from 'axios'
 import { useAuth } from '../hooks/useAuth'
 import { useAuthStore } from '../store/authStore'
 import { useConnectionStore } from '../store/connectionStore'
-import type { LoginRequest, RecentConnection, DatabaseType } from '../types'
+import type { LoginRequest, RecentConnection, DatabaseType, ApiError } from '../types'
 import { DATABASE_TYPES, getDefaultPort } from '../types'
 
 const { Title, Text } = Typography
@@ -14,6 +15,7 @@ function Login() {
   const [form] = Form.useForm()
   const [loading, setLoading] = useState(false)
   const [selectedDbType, setSelectedDbType] = useState<DatabaseType>('MYSQL')
+  const [loginError, setLoginError] = useState<string | null>(null)
   const { login } = useAuth()
   const { isAuthenticated } = useAuthStore()
   const { recentConnections, removeRecentConnection } = useConnectionStore()
@@ -24,10 +26,16 @@ function Login() {
 
   const handleSubmit = async (values: LoginRequest) => {
     setLoading(true)
+    setLoginError(null)
     try {
       await login(values)
-    } catch {
-      // Error is handled in useAuth hook
+    } catch (error) {
+      if (error instanceof AxiosError) {
+        const errorMsg = (error.response?.data as ApiError)?.error || 'Connection failed. Please check your credentials.'
+        setLoginError(errorMsg)
+      } else {
+        setLoginError('Connection failed. Please check your credentials.')
+      }
     } finally {
       setLoading(false)
     }
@@ -140,6 +148,17 @@ function Login() {
             </Title>
             <Text type="secondary">Database Account Manager</Text>
           </div>
+
+          {loginError && (
+            <Alert
+              message="Connection Failed"
+              description={loginError}
+              type="error"
+              showIcon
+              closable
+              onClose={() => setLoginError(null)}
+            />
+          )}
 
           {recentConnections.length > 0 && (
             <>

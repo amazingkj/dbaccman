@@ -105,3 +105,24 @@ inline fun <T> ApplicationCall.useConnectionWithDialect(block: (Connection, Data
     val dialect = getDialect()
     return getConnection().use { conn -> block(conn, dialect) }
 }
+
+/**
+ * Extension function to get the client IP address from the request.
+ * Checks X-Forwarded-For, X-Real-IP headers first, then falls back to remote address.
+ */
+fun ApplicationCall.getClientIp(): String {
+    // Check for forwarded headers (when behind a proxy/load balancer)
+    val forwardedFor = request.headers["X-Forwarded-For"]
+    if (!forwardedFor.isNullOrBlank()) {
+        // X-Forwarded-For may contain multiple IPs, first one is the client
+        return forwardedFor.split(",").first().trim()
+    }
+
+    val realIp = request.headers["X-Real-IP"]
+    if (!realIp.isNullOrBlank()) {
+        return realIp.trim()
+    }
+
+    // Fall back to the direct connection address
+    return request.local.remoteHost
+}

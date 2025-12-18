@@ -8,6 +8,7 @@ import {
   TableOutlined,
   HddOutlined,
   LogoutOutlined,
+  CodeOutlined,
 } from '@ant-design/icons'
 import { useAuth } from '../../hooks/useAuth'
 
@@ -57,6 +58,11 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           key: '/tablespaces',
           icon: <HddOutlined />,
           label: 'Tablespace Management',
+        },
+        {
+          key: '/sql-console',
+          icon: <CodeOutlined />,
+          label: 'SQL Console',
         },
         {
           type: 'divider' as const,

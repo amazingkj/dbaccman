@@ -8,6 +8,7 @@ import Permissions from './pages/Permissions'
 import Sessions from './pages/Sessions'
 import Tables from './pages/Tables'
 import Tablespaces from './pages/Tablespaces'
+import SqlConsole from './pages/SqlConsole'
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
         <Route path="sessions" element={<Sessions />} />
         <Route path="tables" element={<Tables />} />
         <Route path="tablespaces" element={<Tablespaces />} />
+        <Route path="sql-console" element={<SqlConsole />} />
       </Route>
     </Routes>
   )
