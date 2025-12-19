@@ -68,6 +68,12 @@ interface DatabaseDialect {
 
     // ==================== Permission Queries ====================
 
+    /**
+     * Formats grantee identifier for permission queries.
+     * MySQL uses 'user'@'host', Oracle uses just USERNAME, PostgreSQL uses username.
+     */
+    fun formatGrantee(username: String, host: String): String
+
     fun getSchemaPrivilegesQuery(): String
 
     fun getTablePrivilegesQuery(): String

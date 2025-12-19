@@ -65,8 +65,10 @@ function Sessions() {
       await sessionsApi.kill(pid, serialNum)
       message.success('Session killed successfully')
       fetchSessions()
-    } catch {
-      message.error('Failed to kill session')
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string } } }
+      const errorMessage = axiosError.response?.data?.error || 'Failed to kill session'
+      message.error(errorMessage)
     }
   }
 

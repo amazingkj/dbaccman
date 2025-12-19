@@ -139,6 +139,11 @@ class PostgreSQLDialect : DatabaseDialect {
 
     // ==================== Permission Queries ====================
 
+    override fun formatGrantee(username: String, host: String): String {
+        // PostgreSQL uses just the role/user name (lowercase) as grantee
+        return username.lowercase()
+    }
+
     override fun getSchemaPrivilegesQuery(): String = """
         SELECT
             grantee as grantee,

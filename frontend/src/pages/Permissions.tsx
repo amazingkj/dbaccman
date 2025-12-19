@@ -178,7 +178,8 @@ function Permissions() {
       setTablespaceModalOpen(false)
       tablespaceForm.resetFields()
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : 'Failed to set tablespace'
+      const axiosError = error as { response?: { data?: { error?: string } } }
+      const errorMessage = axiosError.response?.data?.error || 'Failed to set tablespace'
       if (errorMessage.includes('does not support')) {
         message.warning('This database type does not support user-level tablespace assignment')
       } else {

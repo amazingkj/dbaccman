@@ -173,14 +173,27 @@ class OracleDialect : DatabaseDialect {
 
     // ==================== Permission Queries ====================
 
+    override fun formatGrantee(username: String, host: String): String {
+        // Oracle uses just the username (uppercase) as grantee
+        return username.uppercase()
+    }
+
     override fun getSchemaPrivilegesQuery(): String = """
-        SELECT
-            GRANTEE as grantee,
-            OWNER as db,
-            PRIVILEGE as privilege,
-            CASE WHEN GRANTABLE = 'YES' THEN 'YES' ELSE 'NO' END as is_grantable
-        FROM DBA_TAB_PRIVS
-        WHERE GRANTEE = ?
+        SELECT * FROM (
+            SELECT
+                GRANTEE as grantee,
+                'SYSTEM' as db,
+                PRIVILEGE as privilege,
+                CASE WHEN ADMIN_OPTION = 'YES' THEN 'YES' ELSE 'NO' END as is_grantable
+            FROM DBA_SYS_PRIVS
+            UNION ALL
+            SELECT
+                GRANTEE as grantee,
+                GRANTED_ROLE as db,
+                'ROLE' as privilege,
+                CASE WHEN ADMIN_OPTION = 'YES' THEN 'YES' ELSE 'NO' END as is_grantable
+            FROM DBA_ROLE_PRIVS
+        ) WHERE GRANTEE = ?
     """.trimIndent()
 
     override fun getTablePrivilegesQuery(): String = """

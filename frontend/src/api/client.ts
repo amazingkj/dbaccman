@@ -26,10 +26,16 @@ apiClient.interceptors.request.use(
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
+    // Only redirect on 401 if NOT on login page (to allow login error display)
     if (error.response?.status === 401) {
-      // Clear persisted auth state from zustand
-      localStorage.removeItem('auth-storage')
-      window.location.href = '/login'
+      const isLoginPage = window.location.pathname === '/login'
+      const isLoginRequest = error.config?.url?.includes('/auth/login')
+
+      if (!isLoginPage && !isLoginRequest) {
+        // Session expired - redirect to login
+        localStorage.removeItem('auth-storage')
+        window.location.href = '/login'
+      }
     }
     return Promise.reject(error)
   }

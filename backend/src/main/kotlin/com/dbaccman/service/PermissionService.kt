@@ -11,7 +11,7 @@ class PermissionService {
     fun getUserPermissions(sessionId: String, username: String, host: String): List<Permission> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val permissions = mutableListOf<Permission>()
-            val grantee = "'$username'@'$host'"
+            val grantee = dialect.formatGrantee(username, host)
 
             // Schema-level privileges
             val schemaSql = dialect.getSchemaPrivilegesQuery()

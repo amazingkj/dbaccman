@@ -193,14 +193,17 @@ function SqlConsole() {
                 showSearch
                 value={selectedAccount}
                 onChange={setSelectedAccount}
+                optionFilterProp="label"
                 options={accounts.map(acc => ({
                   value: acc.username,
-                  label: `${acc.username}@${acc.host}`
+                  label: `${acc.username}@${acc.host}`,
                 }))}
-                filterOption={(input, option) =>
-                  (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
-                }
-                prefix={<UserOutlined />}
+                optionRender={(option) => (
+                  <Space>
+                    <UserOutlined />
+                    {option.label}
+                  </Space>
+                )}
               />
               <Button
                 type="primary"

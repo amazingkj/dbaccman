@@ -150,6 +150,11 @@ class MySQLDialect : DatabaseDialect {
 
     // ==================== Permission Queries ====================
 
+    override fun formatGrantee(username: String, host: String): String {
+        // MySQL uses 'username'@'host' format in information_schema
+        return "'$username'@'$host'"
+    }
+
     override fun getSchemaPrivilegesQuery(): String = """
         SELECT
             GRANTEE as grantee,

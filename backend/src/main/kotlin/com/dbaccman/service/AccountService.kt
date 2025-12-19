@@ -48,6 +48,16 @@ class AccountService {
                         e.errorCode
                     )
                 }
+                // ORA-65048: error processing DDL in PDB - user might already exist as common user
+                if (e.errorCode == 65048 && dialect is OracleDialect) {
+                    throw SQLException(
+                        "Cannot create user '${request.username}' in this PDB. " +
+                        "A common user with the same name may already exist in CDB\$ROOT. " +
+                        "Please use a different username or connect to CDB\$ROOT to manage common users.",
+                        e.sqlState,
+                        e.errorCode
+                    )
+                }
                 // ORA-65096: Common user/role name is invalid - happens in Oracle CDB root
                 if (e.errorCode == 65096 && dialect is OracleDialect) {
                     // Check if we're in CDB$ROOT (not a PDB)
@@ -116,14 +126,22 @@ class AccountService {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             // DDL statement - use createStatement
             val sql = dialect.getAlterUserPasswordSql(username, host, newPassword)
-            conn.createStatement().use { stmt ->
-                stmt.execute(sql)
+            try {
+                conn.createStatement().use { stmt ->
+                    stmt.execute(sql)
+                }
+            } catch (e: SQLException) {
+                handleOracleUserModifyError(e, username, "change password for")
             }
 
             if (expireImmediately) {
                 val expireSql = dialect.getExpirePasswordSql(username, host)
-                conn.createStatement().use { stmt ->
-                    stmt.execute(expireSql)
+                try {
+                    conn.createStatement().use { stmt ->
+                        stmt.execute(expireSql)
+                    }
+                } catch (e: SQLException) {
+                    handleOracleUserModifyError(e, username, "expire password for")
                 }
             }
 
@@ -139,8 +157,12 @@ class AccountService {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             // DDL statement - use createStatement
             val sql = dialect.getDropUserSql(username, host)
-            conn.createStatement().use { stmt ->
-                stmt.execute(sql)
+            try {
+                conn.createStatement().use { stmt ->
+                    stmt.execute(sql)
+                }
+            } catch (e: SQLException) {
+                handleOracleUserModifyError(e, username, "delete")
             }
 
             dialect.getFlushPrivilegesSql()?.let { flushSql ->
@@ -155,8 +177,12 @@ class AccountService {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             // DDL statement - use createStatement
             val sql = dialect.getUnlockAccountSql(username, host)
-            conn.createStatement().use { stmt ->
-                stmt.execute(sql)
+            try {
+                conn.createStatement().use { stmt ->
+                    stmt.execute(sql)
+                }
+            } catch (e: SQLException) {
+                handleOracleUserModifyError(e, username, "unlock")
             }
 
             dialect.getFlushPrivilegesSql()?.let { flushSql ->
@@ -165,6 +191,28 @@ class AccountService {
 
             AuditLogger.log("UNLOCK_ACCOUNT", "Unlocked account $username@$host")
         }
+    }
+
+    private fun handleOracleUserModifyError(e: SQLException, username: String, operation: String) {
+        // ORA-65048: error processing DDL in PDB
+        if (e.errorCode == 65048) {
+            throw SQLException(
+                "Cannot $operation user '$username' in this PDB. " +
+                "The user may be a common user (C##) or doesn't exist in this container. " +
+                "Please connect directly to CDB\$ROOT to manage common users.",
+                e.sqlState,
+                e.errorCode
+            )
+        }
+        // ORA-01918: user does not exist
+        if (e.errorCode == 1918) {
+            throw SQLException(
+                "User '$username' does not exist.",
+                e.sqlState,
+                e.errorCode
+            )
+        }
+        throw e
     }
 
     fun setDefaultTablespace(sessionId: String, username: String, host: String, tablespace: String, quota: String? = null) {
