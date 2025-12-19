@@ -1,5 +1,5 @@
 import apiClient from './client'
-import type { Account, CreateAccountRequest, ExpiringAccount } from '../types'
+import type { Account, CreateAccountRequest, ExpiringAccount, SetTablespaceRequest } from '../types'
 
 export const accountsApi = {
   list: () =>
@@ -19,4 +19,7 @@ export const accountsApi = {
 
   unlock: (username: string, host: string) =>
     apiClient.post(`/accounts/${encodeURIComponent(username)}@${encodeURIComponent(host)}/unlock`),
+
+  setTablespace: (data: SetTablespaceRequest) =>
+    apiClient.post('/accounts/tablespace', data),
 }

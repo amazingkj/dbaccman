@@ -31,6 +31,7 @@ class OracleDialect : DatabaseDialect {
     override fun getActiveSessionsQuery(): String = """
         SELECT
             s.SID as pid,
+            s.SERIAL# as serial_num,
             s.USERNAME as sess_user,
             s.MACHINE as host,
             s.SCHEMANAME as database_name,
@@ -57,6 +58,7 @@ class OracleDialect : DatabaseDialect {
     override fun getLongRunningQueriesQuery(): String = """
         SELECT
             s.SID as pid,
+            s.SERIAL# as serial_num,
             s.USERNAME as sess_user,
             s.MACHINE as host,
             s.SCHEMANAME as database_name,
@@ -72,14 +74,16 @@ class OracleDialect : DatabaseDialect {
         ORDER BY s.LOGON_TIME ASC
     """.trimIndent()
 
-    override fun getKillSessionSql(pid: Long): String {
-        // Note: In Oracle, we need SID and SERIAL# to kill a session
-        // This is a simplified version - actual implementation may need adjustment
-        return "ALTER SYSTEM KILL SESSION '$pid,@serial#' IMMEDIATE"
+    override fun getKillSessionSql(pid: Long, serialNum: Long?): String {
+        // Oracle requires both SID and SERIAL# to kill a session
+        requireNotNull(serialNum) { "Oracle requires SERIAL# to kill a session" }
+        return "ALTER SYSTEM KILL SESSION '$pid,$serialNum' IMMEDIATE"
     }
 
-    override fun getKillQuerySql(pid: Long): String {
-        return "ALTER SYSTEM CANCEL SQL '$pid,@serial#'"
+    override fun getKillQuerySql(pid: Long, serialNum: Long?): String {
+        // Oracle requires both SID and SERIAL# to cancel a query
+        requireNotNull(serialNum) { "Oracle requires SERIAL# to cancel a query" }
+        return "ALTER SYSTEM CANCEL SQL '$pid,$serialNum'"
     }
 
     // ==================== Account Queries ====================
@@ -97,28 +101,51 @@ class OracleDialect : DatabaseDialect {
     """.trimIndent()
 
     override fun getCreateUserSql(username: String, host: String, password: String): String {
-        return "CREATE USER ? IDENTIFIED BY ?"
+        // Oracle DDL doesn't support bind variables - use quoted identifier
+        return "CREATE USER ${quoteIdentifier(username)} IDENTIFIED BY \"${escapePassword(password)}\""
     }
 
+    /**
+     * Returns SQL to check if connected to CDB root (not a PDB).
+     * Returns 'CDB$ROOT' if in CDB root, PDB name otherwise.
+     */
+    fun getContainerNameSql(): String = "SELECT SYS_CONTEXT('USERENV', 'CON_NAME') FROM DUAL"
+
+    /**
+     * Returns SQL to enable local user creation in CDB root environment.
+     * Should only be executed when connected to CDB$ROOT, not in a PDB.
+     */
+    fun getEnableLocalUserSql(): String = "ALTER SESSION SET \"_ORACLE_SCRIPT\"=true"
+
+    /**
+     * Returns SQL to disable local user creation mode.
+     */
+    fun getDisableLocalUserSql(): String = "ALTER SESSION SET \"_ORACLE_SCRIPT\"=false"
+
     override fun getAlterUserPasswordExpireSql(username: String, host: String, expireDays: Int): String {
-        // Oracle uses profiles for password expiry
-        return "ALTER USER ? PROFILE DEFAULT"
+        // Oracle uses profiles for password expiry - for simplicity, just set profile
+        return "ALTER USER ${quoteIdentifier(username)} PROFILE DEFAULT"
     }
 
     override fun getAlterUserPasswordSql(username: String, host: String, newPassword: String): String {
-        return "ALTER USER ? IDENTIFIED BY ?"
+        return "ALTER USER ${quoteIdentifier(username)} IDENTIFIED BY \"${escapePassword(newPassword)}\""
     }
 
     override fun getExpirePasswordSql(username: String, host: String): String {
-        return "ALTER USER ? PASSWORD EXPIRE"
+        return "ALTER USER ${quoteIdentifier(username)} PASSWORD EXPIRE"
     }
 
     override fun getDropUserSql(username: String, host: String): String {
-        return "DROP USER ? CASCADE"
+        return "DROP USER ${quoteIdentifier(username)} CASCADE"
     }
 
     override fun getUnlockAccountSql(username: String, host: String): String {
-        return "ALTER USER ? ACCOUNT UNLOCK"
+        return "ALTER USER ${quoteIdentifier(username)} ACCOUNT UNLOCK"
+    }
+
+    private fun escapePassword(password: String): String {
+        // Escape double quotes in password for Oracle
+        return password.replace("\"", "\\\"")
     }
 
     override fun getExpiringAccountsQuery(): String = """
@@ -134,6 +161,15 @@ class OracleDialect : DatabaseDialect {
     """.trimIndent()
 
     override fun getFlushPrivilegesSql(): String? = null // Oracle doesn't need flush
+
+    override fun getSetDefaultTablespaceSql(username: String, host: String, tablespace: String): String {
+        return "ALTER USER ${quoteIdentifier(username)} DEFAULT TABLESPACE ${quoteIdentifier(tablespace)}"
+    }
+
+    override fun getSetTablespaceQuotaSql(username: String, host: String, tablespace: String, quota: String): String {
+        // quota can be "UNLIMITED" or a size like "100M", "1G"
+        return "ALTER USER ${quoteIdentifier(username)} QUOTA $quota ON ${quoteIdentifier(tablespace)}"
+    }
 
     // ==================== Permission Queries ====================
 
@@ -165,11 +201,7 @@ class OracleDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return if (table == "*") {
-            "GRANT $privList ON $target TO ?"
-        } else {
-            "GRANT $privList ON $target TO ?"
-        }
+        return "GRANT $privList ON $target TO ${quoteIdentifier(username)}"
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
@@ -179,11 +211,7 @@ class OracleDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return if (table == "*") {
-            "REVOKE $privList ON $target FROM ?"
-        } else {
-            "REVOKE $privList ON $target FROM ?"
-        }
+        return "REVOKE $privList ON $target FROM ${quoteIdentifier(username)}"
     }
 
     override fun getShowDatabasesQuery(): String = """
@@ -239,16 +267,16 @@ class OracleDialect : DatabaseDialect {
 
     override fun getIndexesQuery(): String = """
         SELECT
-            INDEX_NAME as name,
-            LISTAGG(COLUMN_NAME, ',') WITHIN GROUP (ORDER BY COLUMN_POSITION) as columns,
-            CASE WHEN UNIQUENESS = 'UNIQUE' THEN 1 ELSE 0 END as is_unique,
-            INDEX_TYPE as type
+            i.OWNER || '.' || i.INDEX_NAME as name,
+            LISTAGG(ic.COLUMN_NAME, ',') WITHIN GROUP (ORDER BY ic.COLUMN_POSITION) as columns,
+            CASE WHEN i.UNIQUENESS = 'UNIQUE' THEN 1 ELSE 0 END as is_unique,
+            i.INDEX_TYPE as type
         FROM DBA_IND_COLUMNS ic
         JOIN DBA_INDEXES i ON ic.INDEX_NAME = i.INDEX_NAME AND ic.INDEX_OWNER = i.OWNER
         WHERE ic.TABLE_OWNER = UPPER(?)
         AND ic.TABLE_NAME = UPPER(?)
-        GROUP BY ic.INDEX_NAME, i.UNIQUENESS, i.INDEX_TYPE
-        ORDER BY ic.INDEX_NAME
+        GROUP BY i.OWNER, i.INDEX_NAME, i.UNIQUENESS, i.INDEX_TYPE
+        ORDER BY i.INDEX_NAME
     """.trimIndent()
 
     override fun getCreateIndexSql(database: String, table: String, indexName: String, columns: List<String>, unique: Boolean): String {
@@ -258,7 +286,13 @@ class OracleDialect : DatabaseDialect {
     }
 
     override fun getDropIndexSql(database: String, table: String, indexName: String): String {
-        return "DROP INDEX ${quoteIdentifier(database)}.${quoteIdentifier(indexName)}"
+        // indexName may already contain owner prefix (e.g., "OWNER.INDEX_NAME")
+        return if (indexName.contains(".")) {
+            val parts = indexName.split(".", limit = 2)
+            "DROP INDEX ${quoteIdentifier(parts[0])}.${quoteIdentifier(parts[1])}"
+        } else {
+            "DROP INDEX ${quoteIdentifier(database)}.${quoteIdentifier(indexName)}"
+        }
     }
 
     // ==================== Tablespace Queries ====================
@@ -355,4 +389,10 @@ class OracleDialect : DatabaseDialect {
         "XS${'$'}NULL",
         "ORACLE_OCM"
     )
+
+    // ==================== Schema/User Context ====================
+
+    override fun getSwitchSchemaSql(schema: String): String {
+        return "ALTER SESSION SET CURRENT_SCHEMA = ${quoteIdentifier(schema)}"
+    }
 }

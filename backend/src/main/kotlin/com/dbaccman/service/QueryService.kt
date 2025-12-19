@@ -34,28 +34,29 @@ class QueryService {
     fun executeQuery(
         sessionId: String,
         query: String,
-        database: String?,
+        account: String?,
         username: String,
         ipAddress: String?
     ): QueryResult {
         // Validate query
         validateQuery(query)
 
-        return useSessionConnectionWithDialect(sessionId) { conn, _ ->
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val startTime = System.currentTimeMillis()
 
-            // Set database/schema if provided
-            if (!database.isNullOrBlank()) {
-                try {
-                    conn.schema = database
-                } catch (e: Exception) {
-                    // Some databases don't support schema setting this way
+            // Switch to account's schema if provided
+            if (!account.isNullOrBlank()) {
+                val switchSql = dialect.getSwitchSchemaSql(account)
+                if (switchSql != null) {
                     try {
                         conn.createStatement().use { stmt ->
-                            stmt.execute("USE $database")
+                            stmt.execute(switchSql)
                         }
-                    } catch (e2: Exception) {
-                        // Ignore if USE command also fails
+                    } catch (e: Exception) {
+                        throw QueryExecutionException(
+                            message = "Failed to switch to schema '$account': ${e.message}",
+                            executionTimeMs = System.currentTimeMillis() - startTime
+                        )
                     }
                 }
             }
@@ -90,7 +91,7 @@ class QueryService {
                             AuditLogger.logQuery(
                                 user = username,
                                 query = trimmedQuery,
-                                database = database,
+                                database = account,
                                 ipAddress = ipAddress,
                                 success = true
                             )
@@ -113,7 +114,7 @@ class QueryService {
                         AuditLogger.logQuery(
                             user = username,
                             query = trimmedQuery,
-                            database = database,
+                            database = account,
                             ipAddress = ipAddress,
                             success = true
                         )
@@ -134,7 +135,7 @@ class QueryService {
                 AuditLogger.logQuery(
                     user = username,
                     query = trimmedQuery,
-                    database = database,
+                    database = account,
                     ipAddress = ipAddress,
                     success = false,
                     error = e.message?.take(200)

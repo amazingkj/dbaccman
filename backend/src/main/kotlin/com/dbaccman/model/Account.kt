@@ -34,6 +34,14 @@ data class ExpiringAccount(
 )
 
 @Serializable
+data class SetTablespaceRequest(
+    val username: String,
+    val host: String = "%",
+    val tablespace: String,
+    val quota: String? = null  // e.g., "UNLIMITED", "100M", "1G"
+)
+
+@Serializable
 data class LoginRequest(
     val username: String,
     val password: String

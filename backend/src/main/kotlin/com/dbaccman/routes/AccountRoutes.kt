@@ -2,6 +2,7 @@ package com.dbaccman.routes
 
 import com.dbaccman.model.ChangePasswordRequest
 import com.dbaccman.model.CreateAccountRequest
+import com.dbaccman.model.SetTablespaceRequest
 import com.dbaccman.service.AccountService
 import com.dbaccman.util.getSessionId
 import com.dbaccman.util.handleAdminRoute
@@ -78,6 +79,21 @@ fun Route.accountRoutes() {
                     val (username, host) = parseUserAtHost(userAtHost)
                     accountService.unlockAccount(sessionId, username, host)
                     call.respond(mapOf("message" to "Account unlocked successfully"))
+                }
+            }
+
+            post("/tablespace") {
+                call.handleAdminMutationRoute(logger, "Failed to set tablespace") {
+                    val sessionId = call.getSessionId()
+                    val request = call.receive<SetTablespaceRequest>()
+                    accountService.setDefaultTablespace(
+                        sessionId,
+                        request.username,
+                        request.host,
+                        request.tablespace,
+                        request.quota
+                    )
+                    call.respond(mapOf("message" to "Tablespace set successfully"))
                 }
             }
         }

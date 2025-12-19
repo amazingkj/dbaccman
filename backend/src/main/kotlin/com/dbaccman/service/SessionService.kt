@@ -14,10 +14,15 @@ class SessionService {
             conn.createStatement().use { stmt ->
                 stmt.executeQuery(sql).use { rs ->
                     val sessions = mutableListOf<SessionInfo>()
+                    val metaData = rs.metaData
+                    val hasSerialNum = (1..metaData.columnCount).any {
+                        metaData.getColumnLabel(it).equals("serial_num", ignoreCase = true)
+                    }
                     while (rs.next()) {
                         sessions.add(
                             SessionInfo(
                                 pid = rs.getLong("pid"),
+                                serialNum = if (hasSerialNum) rs.getLong("serial_num").takeIf { !rs.wasNull() } else null,
                                 user = rs.getString("sess_user") ?: "",
                                 host = rs.getString("host") ?: "",
                                 database = rs.getString("database_name"),
@@ -55,25 +60,25 @@ class SessionService {
         }
     }
 
-    fun killSession(sessionId: String, pid: Long) {
+    fun killSession(sessionId: String, pid: Long, serialNum: Long? = null) {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            val sql = dialect.getKillSessionSql(pid)
+            val sql = dialect.getKillSessionSql(pid, serialNum)
             conn.createStatement().use { stmt ->
                 stmt.execute(sql)
             }
 
-            AuditLogger.log("KILL_SESSION", "Killed session with PID: $pid")
+            AuditLogger.log("KILL_SESSION", "Killed session with PID: $pid" + (serialNum?.let { ", SERIAL#: $it" } ?: ""))
         }
     }
 
-    fun killQuery(sessionId: String, pid: Long) {
+    fun killQuery(sessionId: String, pid: Long, serialNum: Long? = null) {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            val sql = dialect.getKillQuerySql(pid)
+            val sql = dialect.getKillQuerySql(pid, serialNum)
             conn.createStatement().use { stmt ->
                 stmt.execute(sql)
             }
 
-            AuditLogger.log("KILL_QUERY", "Killed query for session with PID: $pid")
+            AuditLogger.log("KILL_QUERY", "Killed query for session with PID: $pid" + (serialNum?.let { ", SERIAL#: $it" } ?: ""))
         }
     }
 
@@ -85,10 +90,15 @@ class SessionService {
                 stmt.setInt(1, thresholdSeconds)
                 stmt.executeQuery().use { rs ->
                     val sessions = mutableListOf<SessionInfo>()
+                    val metaData = rs.metaData
+                    val hasSerialNum = (1..metaData.columnCount).any {
+                        metaData.getColumnLabel(it).equals("serial_num", ignoreCase = true)
+                    }
                     while (rs.next()) {
                         sessions.add(
                             SessionInfo(
                                 pid = rs.getLong("pid"),
+                                serialNum = if (hasSerialNum) rs.getLong("serial_num").takeIf { !rs.wasNull() } else null,
                                 user = rs.getString("sess_user") ?: "",
                                 host = rs.getString("host") ?: "",
                                 database = rs.getString("database_name"),

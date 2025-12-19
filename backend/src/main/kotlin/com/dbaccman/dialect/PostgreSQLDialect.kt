@@ -69,9 +69,9 @@ class PostgreSQLDialect : DatabaseDialect {
         ORDER BY query_start ASC
     """.trimIndent()
 
-    override fun getKillSessionSql(pid: Long): String = "SELECT pg_terminate_backend($pid)"
+    override fun getKillSessionSql(pid: Long, serialNum: Long?): String = "SELECT pg_terminate_backend($pid)"
 
-    override fun getKillQuerySql(pid: Long): String = "SELECT pg_cancel_backend($pid)"
+    override fun getKillQuerySql(pid: Long, serialNum: Long?): String = "SELECT pg_cancel_backend($pid)"
 
     // ==================== Account Queries ====================
 
@@ -89,27 +89,33 @@ class PostgreSQLDialect : DatabaseDialect {
     """.trimIndent()
 
     override fun getCreateUserSql(username: String, host: String, password: String): String {
-        return "CREATE USER ? WITH PASSWORD ?"
+        // PostgreSQL DDL with quoted identifier and escaped password
+        return "CREATE USER ${quoteIdentifier(username)} WITH PASSWORD '${escapePassword(password)}'"
     }
 
     override fun getAlterUserPasswordExpireSql(username: String, host: String, expireDays: Int): String {
-        return "ALTER USER ? VALID UNTIL CURRENT_DATE + INTERVAL '? days'"
+        return "ALTER USER ${quoteIdentifier(username)} VALID UNTIL CURRENT_DATE + INTERVAL '$expireDays days'"
     }
 
     override fun getAlterUserPasswordSql(username: String, host: String, newPassword: String): String {
-        return "ALTER USER ? WITH PASSWORD ?"
+        return "ALTER USER ${quoteIdentifier(username)} WITH PASSWORD '${escapePassword(newPassword)}'"
     }
 
     override fun getExpirePasswordSql(username: String, host: String): String {
-        return "ALTER USER ? VALID UNTIL 'now'"
+        return "ALTER USER ${quoteIdentifier(username)} VALID UNTIL 'now'"
     }
 
     override fun getDropUserSql(username: String, host: String): String {
-        return "DROP USER IF EXISTS ?"
+        return "DROP USER IF EXISTS ${quoteIdentifier(username)}"
     }
 
     override fun getUnlockAccountSql(username: String, host: String): String {
-        return "ALTER USER ? WITH LOGIN"
+        return "ALTER USER ${quoteIdentifier(username)} WITH LOGIN"
+    }
+
+    private fun escapePassword(password: String): String {
+        // Escape single quotes in password for PostgreSQL
+        return password.replace("'", "''")
     }
 
     override fun getExpiringAccountsQuery(): String = """
@@ -125,6 +131,11 @@ class PostgreSQLDialect : DatabaseDialect {
     """.trimIndent()
 
     override fun getFlushPrivilegesSql(): String? = null // PostgreSQL doesn't need flush
+
+    // PostgreSQL doesn't have user-level default tablespace, it's set at database or table level
+    override fun getSetDefaultTablespaceSql(username: String, host: String, tablespace: String): String? = null
+
+    override fun getSetTablespaceQuotaSql(username: String, host: String, tablespace: String, quota: String): String? = null
 
     // ==================== Permission Queries ====================
 
@@ -156,7 +167,7 @@ class PostgreSQLDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return "GRANT $privList ON $target TO ?"
+        return "GRANT $privList ON $target TO ${quoteIdentifier(username)}"
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
@@ -166,7 +177,7 @@ class PostgreSQLDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return "REVOKE $privList ON $target FROM ?"
+        return "REVOKE $privList ON $target FROM ${quoteIdentifier(username)}"
     }
 
     override fun getShowDatabasesQuery(): String = """
@@ -320,4 +331,11 @@ class PostgreSQLDialect : DatabaseDialect {
     override fun getSystemUsers(): List<String> = listOf(
         "postgres"
     )
+
+    // ==================== Schema/User Context ====================
+
+    override fun getSwitchSchemaSql(schema: String): String {
+        // PostgreSQL uses SET search_path to switch schema
+        return "SET search_path TO ${quoteIdentifier(schema)}"
+    }
 }

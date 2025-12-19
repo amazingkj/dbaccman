@@ -126,6 +126,13 @@ function Accounts() {
       title: 'Password Expiry',
       dataIndex: 'passwordLifetime',
       key: 'passwordLifetime',
+      sorter: (a: Account, b: Account) => {
+        // null (Never) should be at the end when sorting ascending
+        if (a.passwordLifetime === null && b.passwordLifetime === null) return 0
+        if (a.passwordLifetime === null) return 1
+        if (b.passwordLifetime === null) return -1
+        return (a.passwordLifetime || 0) - (b.passwordLifetime || 0)
+      },
       render: (days: number | null) =>
         days ? `${days} days` : <Tag color="blue">Never</Tag>,
     },
@@ -133,6 +140,11 @@ function Accounts() {
       title: 'Status',
       dataIndex: 'accountLocked',
       key: 'accountLocked',
+      filters: [
+        { text: 'Active', value: false },
+        { text: 'Locked', value: true },
+      ],
+      onFilter: (value: boolean | React.Key, record: Account) => record.accountLocked === value,
       render: (locked: boolean) =>
         locked ? (
           <Tag color="red" icon={<LockOutlined />}>
@@ -148,6 +160,14 @@ function Accounts() {
       title: 'Last Password Change',
       dataIndex: 'passwordLastChanged',
       key: 'passwordLastChanged',
+      sorter: (a: Account, b: Account) => {
+        // null should be at the end
+        if (!a.passwordLastChanged && !b.passwordLastChanged) return 0
+        if (!a.passwordLastChanged) return 1
+        if (!b.passwordLastChanged) return -1
+        return new Date(a.passwordLastChanged).getTime() - new Date(b.passwordLastChanged).getTime()
+      },
+      defaultSortOrder: 'descend' as const,
       render: (date: string | null) => date || '-',
     },
     {

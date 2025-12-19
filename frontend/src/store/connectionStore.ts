@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
-import type { RecentConnection, DatabaseType } from '../types'
+import type { RecentConnection } from '../types'
 
 const MAX_RECENT_CONNECTIONS = 10
 

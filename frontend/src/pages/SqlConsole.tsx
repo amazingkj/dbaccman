@@ -24,18 +24,19 @@ import {
   TableOutlined,
   HistoryOutlined,
   CopyOutlined,
-  DatabaseOutlined,
+  UserOutlined,
+  CodeOutlined,
 } from '@ant-design/icons'
 import { queryApi, type QueryResult, type AuditLogEntry } from '../api/query'
-import { tablesApi } from '../api/tables'
-import type { DatabaseInfo } from '../types'
+import { accountsApi } from '../api/accounts'
+import type { Account } from '../types'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
 
 interface QueryHistory {
   query: string
-  database?: string
+  account?: string
   timestamp: string
   success: boolean
   rowCount?: number
@@ -44,22 +45,23 @@ interface QueryHistory {
 
 function SqlConsole() {
   const [query, setQuery] = useState('')
-  const [selectedDatabase, setSelectedDatabase] = useState<string | undefined>()
-  const [databases, setDatabases] = useState<DatabaseInfo[]>([])
+  const [selectedAccount, setSelectedAccount] = useState<string | undefined>()
+  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<QueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<QueryHistory[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
   const [activeTab, setActiveTab] = useState('result')
-  const textAreaRef = useRef<HTMLTextAreaElement>(null)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const textAreaRef = useRef<any>(null)
 
-  const fetchDatabases = useCallback(async () => {
+  const fetchAccounts = useCallback(async () => {
     try {
-      const response = await tablesApi.getDatabases()
-      setDatabases(response.data)
+      const response = await accountsApi.list()
+      setAccounts(response.data)
     } catch {
-      // Ignore error - databases list is optional
+      // Ignore error - accounts list is optional
     }
   }, [])
 
@@ -73,8 +75,8 @@ function SqlConsole() {
   }, [])
 
   useEffect(() => {
-    fetchDatabases()
-  }, [fetchDatabases])
+    fetchAccounts()
+  }, [fetchAccounts])
 
   const executeQuery = async () => {
     if (!query.trim()) {
@@ -88,14 +90,14 @@ function SqlConsole() {
     const timestamp = new Date().toLocaleString()
 
     try {
-      const response = await queryApi.execute(query, selectedDatabase)
+      const response = await queryApi.execute(query, selectedAccount)
       setResult(response.data)
       setActiveTab('result')
 
       // Add to history
       setHistory(prev => [{
         query,
-        database: selectedDatabase,
+        account: selectedAccount,
         timestamp,
         success: true,
         rowCount: response.data.rowCount,
@@ -116,7 +118,7 @@ function SqlConsole() {
       // Add to history
       setHistory(prev => [{
         query,
-        database: selectedDatabase,
+        account: selectedAccount,
         timestamp,
         success: false,
         executionTimeMs: errorResponse.response?.data?.executionTimeMs,
@@ -136,7 +138,7 @@ function SqlConsole() {
 
   const loadFromHistory = (item: QueryHistory) => {
     setQuery(item.query)
-    setSelectedDatabase(item.database)
+    setSelectedAccount(item.account)
   }
 
   const copyToClipboard = (text: string) => {
@@ -177,7 +179,7 @@ function SqlConsole() {
   return (
     <div>
       <Title level={2}>
-        <DatabaseOutlined /> SQL Console
+        <CodeOutlined /> SQL Console
       </Title>
 
       <Row gutter={[16, 16]}>
@@ -185,12 +187,20 @@ function SqlConsole() {
           <Card size="small">
             <Space style={{ marginBottom: 12, width: '100%' }} wrap>
               <Select
-                placeholder="Select database"
-                style={{ width: 200 }}
+                placeholder="Select account (schema)"
+                style={{ width: 250 }}
                 allowClear
-                value={selectedDatabase}
-                onChange={setSelectedDatabase}
-                options={databases.map(db => ({ value: db.name, label: db.name }))}
+                showSearch
+                value={selectedAccount}
+                onChange={setSelectedAccount}
+                options={accounts.map(acc => ({
+                  value: acc.username,
+                  label: `${acc.username}@${acc.host}`
+                }))}
+                filterOption={(input, option) =>
+                  (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                }
+                prefix={<UserOutlined />}
               />
               <Button
                 type="primary"
@@ -218,7 +228,7 @@ function SqlConsole() {
             </Space>
 
             <TextArea
-              ref={textAreaRef as React.RefObject<HTMLTextAreaElement & { resizableTextArea: unknown }>}
+              ref={textAreaRef}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -304,8 +314,15 @@ function SqlConsole() {
 
                       {!result && !error && (
                         <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
-                          <DatabaseOutlined style={{ fontSize: 48, marginBottom: 16 }} />
+                          <CodeOutlined style={{ fontSize: 48, marginBottom: 16 }} />
                           <div>Execute a query to see results</div>
+                          {selectedAccount && (
+                            <div style={{ marginTop: 8 }}>
+                              <Tag color="purple" icon={<UserOutlined />}>
+                                Running as: {selectedAccount}
+                              </Tag>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -353,8 +370,8 @@ function SqlConsole() {
                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                   {item.timestamp}
                                 </Text>
-                                {item.database && (
-                                  <Tag color="blue">{item.database}</Tag>
+                                {item.account && (
+                                  <Tag color="purple" icon={<UserOutlined />}>{item.account}</Tag>
                                 )}
                                 {item.rowCount !== undefined && (
                                   <Text type="secondary" style={{ fontSize: 12 }}>

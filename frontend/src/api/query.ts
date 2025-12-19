@@ -25,8 +25,8 @@ export interface AuditLogEntry {
 }
 
 export const queryApi = {
-  execute: (query: string, database?: string) =>
-    apiClient.post<QueryResult>('/query/execute', { query, database }),
+  execute: (query: string, account?: string) =>
+    apiClient.post<QueryResult>('/query/execute', { query, account }),
 
   getAuditLogs: (params?: { limit?: number; action?: string; user?: string }) =>
     apiClient.get<AuditLogEntry[]>('/query/audit-logs', { params }),

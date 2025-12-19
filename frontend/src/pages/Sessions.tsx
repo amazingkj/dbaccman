@@ -60,9 +60,9 @@ function Sessions() {
     }
   }, [autoRefresh, fetchSessions])
 
-  const handleKillSession = async (pid: number) => {
+  const handleKillSession = async (pid: number, serialNum?: number | null) => {
     try {
-      await sessionsApi.kill(pid)
+      await sessionsApi.kill(pid, serialNum)
       message.success('Session killed successfully')
       fetchSessions()
     } catch {
@@ -206,7 +206,7 @@ function Sessions() {
         <Popconfirm
           title="Kill Session"
           description={`Are you sure you want to kill session ${record.pid}?`}
-          onConfirm={() => handleKillSession(record.pid)}
+          onConfirm={() => handleKillSession(record.pid, record.serialNum)}
           okText="Yes"
           cancelText="No"
         >

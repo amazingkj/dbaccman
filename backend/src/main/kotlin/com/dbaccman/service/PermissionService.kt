@@ -65,10 +65,9 @@ class PermissionService {
                 host = request.host
             )
 
-            conn.prepareStatement(sql).use { stmt ->
-                stmt.setString(1, request.username)
-                stmt.setString(2, request.host)
-                stmt.execute()
+            // DCL statement - use createStatement
+            conn.createStatement().use { stmt ->
+                stmt.execute(sql)
             }
 
             dialect.getFlushPrivilegesSql()?.let { flushSql ->
@@ -99,10 +98,9 @@ class PermissionService {
                 host = request.host
             )
 
-            conn.prepareStatement(sql).use { stmt ->
-                stmt.setString(1, request.username)
-                stmt.setString(2, request.host)
-                stmt.execute()
+            // DCL statement - use createStatement
+            conn.createStatement().use { stmt ->
+                stmt.execute(sql)
             }
 
             dialect.getFlushPrivilegesSql()?.let { flushSql ->

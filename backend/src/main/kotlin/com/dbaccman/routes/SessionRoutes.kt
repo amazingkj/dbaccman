@@ -48,7 +48,8 @@ fun Route.sessionRoutes() {
                     val sessionId = call.getSessionId()
                     val pid = call.parameters["pid"]?.toLongOrNull()
                         ?: throw IllegalArgumentException("Invalid PID")
-                    sessionService.killSession(sessionId, pid)
+                    val serialNum = call.request.queryParameters["serialNum"]?.toLongOrNull()
+                    sessionService.killSession(sessionId, pid, serialNum)
                     call.respond(mapOf("message" to "Session killed successfully"))
                 }
             }
@@ -58,7 +59,8 @@ fun Route.sessionRoutes() {
                     val sessionId = call.getSessionId()
                     val pid = call.parameters["pid"]?.toLongOrNull()
                         ?: throw IllegalArgumentException("Invalid PID")
-                    sessionService.killQuery(sessionId, pid)
+                    val serialNum = call.request.queryParameters["serialNum"]?.toLongOrNull()
+                    sessionService.killQuery(sessionId, pid, serialNum)
                     call.respond(mapOf("message" to "Query killed successfully"))
                 }
             }

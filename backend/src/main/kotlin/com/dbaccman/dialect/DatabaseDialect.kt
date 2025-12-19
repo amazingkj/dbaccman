@@ -30,9 +30,9 @@ interface DatabaseDialect {
 
     fun getLongRunningQueriesQuery(): String
 
-    fun getKillSessionSql(pid: Long): String
+    fun getKillSessionSql(pid: Long, serialNum: Long? = null): String
 
-    fun getKillQuerySql(pid: Long): String
+    fun getKillQuerySql(pid: Long, serialNum: Long? = null): String
 
     // ==================== Account Queries ====================
 
@@ -53,6 +53,18 @@ interface DatabaseDialect {
     fun getExpiringAccountsQuery(): String
 
     fun getFlushPrivilegesSql(): String?
+
+    /**
+     * Returns SQL to set default tablespace for a user.
+     * Returns null if the database doesn't support this feature.
+     */
+    fun getSetDefaultTablespaceSql(username: String, host: String, tablespace: String): String?
+
+    /**
+     * Returns SQL to set quota on a tablespace for a user.
+     * Returns null if the database doesn't support this feature.
+     */
+    fun getSetTablespaceQuotaSql(username: String, host: String, tablespace: String, quota: String): String?
 
     // ==================== Permission Queries ====================
 
@@ -113,4 +125,12 @@ interface DatabaseDialect {
      * Override if the database uses different column naming conventions.
      */
     fun mapColumnName(genericName: String): String = genericName
+
+    // ==================== Schema/User Context ====================
+
+    /**
+     * Returns SQL to switch current schema/user context for query execution.
+     * This allows running queries in the context of a different user's schema.
+     */
+    fun getSwitchSchemaSql(schema: String): String?
 }

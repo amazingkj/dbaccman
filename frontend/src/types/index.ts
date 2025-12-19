@@ -80,6 +80,13 @@ export interface ExpiringAccount {
   daysUntilExpiry: number
 }
 
+export interface SetTablespaceRequest {
+  username: string
+  host: string
+  tablespace: string
+  quota?: string  // e.g., "UNLIMITED", "100M", "1G"
+}
+
 // Permission Types
 export interface Permission {
   grantee: string
@@ -100,6 +107,7 @@ export interface GrantPermissionRequest {
 // Session Types
 export interface SessionInfo {
   pid: number
+  serialNum?: number | null  // Oracle SERIAL# for kill session
   user: string
   host: string
   database: string | null

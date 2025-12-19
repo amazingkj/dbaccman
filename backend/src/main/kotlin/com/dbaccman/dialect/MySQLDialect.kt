@@ -71,9 +71,9 @@ class MySQLDialect : DatabaseDialect {
         ORDER BY time DESC
     """.trimIndent()
 
-    override fun getKillSessionSql(pid: Long): String = "KILL $pid"
+    override fun getKillSessionSql(pid: Long, serialNum: Long?): String = "KILL $pid"
 
-    override fun getKillQuerySql(pid: Long): String = "KILL QUERY $pid"
+    override fun getKillQuerySql(pid: Long, serialNum: Long?): String = "KILL QUERY $pid"
 
     // ==================== Account Queries ====================
 
@@ -90,27 +90,33 @@ class MySQLDialect : DatabaseDialect {
     """.trimIndent()
 
     override fun getCreateUserSql(username: String, host: String, password: String): String {
-        return "CREATE USER ?@? IDENTIFIED BY ?"
+        // MySQL DDL with quoted identifiers and escaped password
+        return "CREATE USER ${quoteIdentifier(username)}@${quoteIdentifier(host)} IDENTIFIED BY '${escapePassword(password)}'"
     }
 
     override fun getAlterUserPasswordExpireSql(username: String, host: String, expireDays: Int): String {
-        return "ALTER USER ?@? PASSWORD EXPIRE INTERVAL ? DAY"
+        return "ALTER USER ${quoteIdentifier(username)}@${quoteIdentifier(host)} PASSWORD EXPIRE INTERVAL $expireDays DAY"
     }
 
     override fun getAlterUserPasswordSql(username: String, host: String, newPassword: String): String {
-        return "ALTER USER ?@? IDENTIFIED BY ?"
+        return "ALTER USER ${quoteIdentifier(username)}@${quoteIdentifier(host)} IDENTIFIED BY '${escapePassword(newPassword)}'"
     }
 
     override fun getExpirePasswordSql(username: String, host: String): String {
-        return "ALTER USER ?@? PASSWORD EXPIRE"
+        return "ALTER USER ${quoteIdentifier(username)}@${quoteIdentifier(host)} PASSWORD EXPIRE"
     }
 
     override fun getDropUserSql(username: String, host: String): String {
-        return "DROP USER ?@?"
+        return "DROP USER ${quoteIdentifier(username)}@${quoteIdentifier(host)}"
     }
 
     override fun getUnlockAccountSql(username: String, host: String): String {
-        return "ALTER USER ?@? ACCOUNT UNLOCK"
+        return "ALTER USER ${quoteIdentifier(username)}@${quoteIdentifier(host)} ACCOUNT UNLOCK"
+    }
+
+    private fun escapePassword(password: String): String {
+        // Escape single quotes and backslashes in password for MySQL
+        return password.replace("\\", "\\\\").replace("'", "\\'")
     }
 
     override fun getExpiringAccountsQuery(): String = """
@@ -136,6 +142,11 @@ class MySQLDialect : DatabaseDialect {
     """.trimIndent()
 
     override fun getFlushPrivilegesSql(): String = "FLUSH PRIVILEGES"
+
+    // MySQL doesn't support user-level default tablespace assignment
+    override fun getSetDefaultTablespaceSql(username: String, host: String, tablespace: String): String? = null
+
+    override fun getSetTablespaceQuotaSql(username: String, host: String, tablespace: String, quota: String): String? = null
 
     // ==================== Permission Queries ====================
 
@@ -167,7 +178,7 @@ class MySQLDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return "GRANT $privList ON $target TO ?@?"
+        return "GRANT $privList ON $target TO ${quoteIdentifier(username)}@${quoteIdentifier(host)}"
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
@@ -177,7 +188,7 @@ class MySQLDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return "REVOKE $privList ON $target FROM ?@?"
+        return "REVOKE $privList ON $target FROM ${quoteIdentifier(username)}@${quoteIdentifier(host)}"
     }
 
     override fun getShowDatabasesQuery(): String = "SHOW DATABASES"
@@ -345,4 +356,11 @@ class MySQLDialect : DatabaseDialect {
         "mysql.session",
         "mysql.infoschema"
     )
+
+    // ==================== Schema/User Context ====================
+
+    override fun getSwitchSchemaSql(schema: String): String {
+        // MySQL uses USE database to switch schema
+        return "USE ${quoteIdentifier(schema)}"
+    }
 }

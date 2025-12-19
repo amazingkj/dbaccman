@@ -18,7 +18,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ExecuteQueryRequest(
     val query: String,
-    val database: String? = null
+    val account: String? = null  // Account/schema to run query as
 )
 
 @Serializable
@@ -60,7 +60,7 @@ fun Route.queryRoutes() {
                     val result = queryService.executeQuery(
                         sessionId = sessionId,
                         query = request.query,
-                        database = request.database,
+                        account = request.account,
                         username = username,
                         ipAddress = clientIp
                     )

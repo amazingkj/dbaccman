@@ -1,0 +1,30 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+*.iml
+
+# Build artifacts
+backend/build
+backend/.gradle
+frontend/dist
+frontend/node_modules
+
+# Logs
+logs
+*.log
+
+# Environment
+.env
+.env.*
+
+# Documentation
+*.md
+
+# Docker
+Dockerfile
+docker-compose*.yml
+.dockerignore

@@ -2,6 +2,7 @@ plugins {
     kotlin("jvm") version "1.9.21"
     kotlin("plugin.serialization") version "1.9.21"
     application
+    id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
 group = "com.dbaccman"
@@ -56,4 +57,14 @@ tasks.test {
 
 kotlin {
     jvmToolchain(21)
+}
+
+tasks.shadowJar {
+    archiveBaseName.set("dbaccman")
+    archiveClassifier.set("all")
+    archiveVersion.set("")
+    manifest {
+        attributes["Main-Class"] = "com.dbaccman.ApplicationKt"
+    }
+    mergeServiceFiles()
 }

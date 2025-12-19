@@ -21,10 +21,12 @@ import {
   PlusOutlined,
   DeleteOutlined,
   ReloadOutlined,
+  DatabaseOutlined,
 } from '@ant-design/icons'
 import { permissionsApi } from '../api/permissions'
 import { accountsApi } from '../api/accounts'
-import type { Permission, GrantPermissionRequest, Account } from '../types'
+import { tablespacesApi } from '../api/tablespaces'
+import type { Permission, GrantPermissionRequest, Account, TablespaceInfo } from '../types'
 
 const { Title, Text } = Typography
 const { Option } = Select
@@ -61,11 +63,15 @@ function Permissions() {
   const [databases, setDatabases] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
   const [grantModalOpen, setGrantModalOpen] = useState(false)
+  const [tablespaceModalOpen, setTablespaceModalOpen] = useState(false)
+  const [tablespaces, setTablespaces] = useState<TablespaceInfo[]>([])
   const [form] = Form.useForm()
+  const [tablespaceForm] = Form.useForm()
 
   useEffect(() => {
     fetchAccounts()
     fetchDatabases()
+    fetchTablespaces()
   }, [])
 
   const fetchAccounts = async () => {
@@ -85,6 +91,16 @@ function Permissions() {
       setDatabases(uniqueDbs.length > 0 ? uniqueDbs : ['mysql', 'test'])
     } catch {
       setDatabases(['mysql', 'test'])
+    }
+  }
+
+  const fetchTablespaces = async () => {
+    try {
+      const response = await tablespacesApi.list()
+      setTablespaces(response.data)
+    } catch {
+      // Tablespaces might not be available on all database types
+      setTablespaces([])
     }
   }
 
@@ -147,6 +163,30 @@ function Permissions() {
     })
   }
 
+  const handleSetTablespace = async (values: { tablespace: string; quota?: string }) => {
+    if (!selectedAccount) return
+
+    const [username, host] = selectedAccount.split('@')
+    try {
+      await accountsApi.setTablespace({
+        username,
+        host: host || '%',
+        tablespace: values.tablespace,
+        quota: values.quota,
+      })
+      message.success('Default tablespace set successfully')
+      setTablespaceModalOpen(false)
+      tablespaceForm.resetFields()
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to set tablespace'
+      if (errorMessage.includes('does not support')) {
+        message.warning('This database type does not support user-level tablespace assignment')
+      } else {
+        message.error(errorMessage)
+      }
+    }
+  }
+
   const columns = [
     {
       title: 'Database',
@@ -200,19 +240,6 @@ function Permissions() {
     },
   ]
 
-  // Group permissions by database
-  const groupedPermissions = permissions.reduce(
-    (acc, perm) => {
-      const key = `${perm.database}.${perm.table}`
-      if (!acc[key]) {
-        acc[key] = []
-      }
-      acc[key].push(perm)
-      return acc
-    },
-    {} as Record<string, Permission[]>
-  )
-
   return (
     <div>
       <Title level={2}>Permission Management</Title>
@@ -250,6 +277,17 @@ function Permissions() {
                 disabled={!selectedAccount}
               >
                 Grant Permission
+              </Button>
+              <Button
+                icon={<DatabaseOutlined />}
+                onClick={() => {
+                  tablespaceForm.resetFields()
+                  setTablespaceModalOpen(true)
+                }}
+                disabled={!selectedAccount || tablespaces.length === 0}
+                title={tablespaces.length === 0 ? 'No tablespaces available' : 'Set default tablespace for this account'}
+              >
+                Set Tablespace
               </Button>
               <Button
                 icon={<ReloadOutlined />}
@@ -393,6 +431,66 @@ function Permissions() {
                 Grant
               </Button>
               <Button onClick={() => setGrantModalOpen(false)}>Cancel</Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Set Tablespace Modal */}
+      <Modal
+        title="Set Default Tablespace"
+        open={tablespaceModalOpen}
+        onCancel={() => {
+          setTablespaceModalOpen(false)
+          tablespaceForm.resetFields()
+        }}
+        footer={null}
+        width={500}
+      >
+        <Form
+          form={tablespaceForm}
+          layout="vertical"
+          onFinish={handleSetTablespace}
+        >
+          <Form.Item label="Account">
+            <Input value={selectedAccount || ''} disabled />
+          </Form.Item>
+
+          <Form.Item
+            name="tablespace"
+            label="Tablespace"
+            rules={[{ required: true, message: 'Please select a tablespace' }]}
+          >
+            <Select placeholder="Select tablespace">
+              {tablespaces.map((ts) => (
+                <Option key={ts.name} value={ts.name}>
+                  {ts.name} ({(ts.fileSize / 1024 / 1024).toFixed(2)} MB)
+                </Option>
+              ))}
+            </Select>
+          </Form.Item>
+
+          <Form.Item
+            name="quota"
+            label="Quota (optional)"
+            tooltip="Examples: UNLIMITED, 100M, 1G, 500K"
+          >
+            <Select placeholder="Select or enter quota" allowClear>
+              <Option value="UNLIMITED">UNLIMITED</Option>
+              <Option value="100M">100 MB</Option>
+              <Option value="500M">500 MB</Option>
+              <Option value="1G">1 GB</Option>
+              <Option value="5G">5 GB</Option>
+              <Option value="10G">10 GB</Option>
+            </Select>
+          </Form.Item>
+
+          <Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit">
+                Set Tablespace
+              </Button>
+              <Button onClick={() => setTablespaceModalOpen(false)}>Cancel</Button>
             </Space>
           </Form.Item>
         </Form>
