@@ -1,7 +1,6 @@
 services:
   dbaccman:
-    build: .
-    image: dbaccman:latest
+    image: jiin724/dbaccman:latest
     container_name: dbaccman
     ports:
       - "3080:3080"
