@@ -68,8 +68,10 @@ function Accounts() {
       setCreateModalOpen(false)
       form.resetFields()
       fetchAccounts()
-    } catch (error) {
-      message.error('Failed to create account')
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } }
+      const errorMsg = err.response?.data?.error || 'Failed to create account'
+      message.error(errorMsg)
     }
   }
 
@@ -85,8 +87,10 @@ function Accounts() {
       setPasswordModalOpen(false)
       passwordForm.resetFields()
       setSelectedAccount(null)
-    } catch (error) {
-      message.error('Failed to change password')
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } }
+      const errorMsg = err.response?.data?.error || 'Failed to change password'
+      message.error(errorMsg)
     }
   }
 
@@ -95,8 +99,10 @@ function Accounts() {
       await accountsApi.delete(account.username, account.host)
       message.success('Account deleted successfully')
       fetchAccounts()
-    } catch (error) {
-      message.error('Failed to delete account')
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } }
+      const errorMsg = err.response?.data?.error || 'Failed to delete account'
+      message.error(errorMsg)
     }
   }
 
@@ -105,9 +111,24 @@ function Accounts() {
       await accountsApi.unlock(account.username, account.host)
       message.success('Account unlocked successfully')
       fetchAccounts()
-    } catch (error) {
-      message.error('Failed to unlock account')
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string } } }
+      const errorMsg = err.response?.data?.error || 'Failed to unlock account'
+      message.error(errorMsg)
     }
+  }
+
+  // Oracle system users that should not be modified
+  const isOracleSystemUser = (username: string): boolean => {
+    const systemUsers = [
+      'SYS', 'SYSTEM', 'DBSNMP', 'OUTLN', 'DIP', 'ORACLE_OCM',
+      'APPQOSSYS', 'WMSYS', 'XDB', 'ANONYMOUS', 'XS$NULL',
+      'GSMCATUSER', 'GSMUSER', 'SYSBACKUP', 'SYSDG', 'SYSKM',
+      'SYSRAC', 'SYS$UMF', 'AUDSYS', 'DGPDB_INT', 'DVF', 'DVSYS',
+      'GGSYS', 'GSMADMIN_INTERNAL', 'LBACSYS', 'MDSYS', 'OJVMSYS',
+      'OLAPSYS', 'ORDDATA', 'ORDSYS', 'REMOTE_SCHEDULER_AGENT', 'SI_INFORMTN_SCHEMA'
+    ]
+    return systemUsers.includes(username.toUpperCase()) || username.toUpperCase().startsWith('C##')
   }
 
   const columns = [
@@ -173,40 +194,48 @@ function Accounts() {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: unknown, record: Account) => (
-        <Space>
-          <Button
-            type="link"
-            icon={<KeyOutlined />}
-            onClick={() => {
-              setSelectedAccount(record)
-              setPasswordModalOpen(true)
-            }}
-          >
-            Change Password
-          </Button>
-          {record.accountLocked && (
+      render: (_: unknown, record: Account) => {
+        const isSystemUser = isOracleSystemUser(record.username)
+
+        if (isSystemUser) {
+          return <Tag color="default">System User</Tag>
+        }
+
+        return (
+          <Space>
             <Button
               type="link"
-              icon={<UnlockOutlined />}
-              onClick={() => handleUnlock(record)}
+              icon={<KeyOutlined />}
+              onClick={() => {
+                setSelectedAccount(record)
+                setPasswordModalOpen(true)
+              }}
             >
-              Unlock
+              Change Password
             </Button>
-          )}
-          <Popconfirm
-            title="Delete Account"
-            description={`Are you sure you want to delete ${record.username}@${record.host}?`}
-            onConfirm={() => handleDelete(record)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            {record.accountLocked && (
+              <Button
+                type="link"
+                icon={<UnlockOutlined />}
+                onClick={() => handleUnlock(record)}
+              >
+                Unlock
+              </Button>
+            )}
+            <Popconfirm
+              title="Delete Account"
+              description={`Are you sure you want to delete ${record.username}@${record.host}?`}
+              onConfirm={() => handleDelete(record)}
+              okText="Yes"
+              cancelText="No"
+            >
+              <Button type="link" danger icon={<DeleteOutlined />}>
+                Delete
+              </Button>
+            </Popconfirm>
+          </Space>
+        )
+      },
     },
   ]
 

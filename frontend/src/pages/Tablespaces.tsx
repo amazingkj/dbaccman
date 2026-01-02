@@ -215,23 +215,35 @@ function Tablespaces() {
     {
       title: 'Actions',
       key: 'actions',
-      render: (_: unknown, record: TablespaceInfo) => (
-        <Space>
-          {record.spaceType === 'General' && (
-            <Popconfirm
-              title="Delete Tablespace"
-              description={`Are you sure you want to delete ${record.name}?`}
-              onConfirm={() => handleDelete(record)}
-              okText="Yes"
-              cancelText="No"
-            >
-              <Button type="link" danger icon={<DeleteOutlined />}>
-                Delete
-              </Button>
-            </Popconfirm>
-          )}
-        </Space>
-      ),
+      render: (_: unknown, record: TablespaceInfo) => {
+        // System tablespaces that should not be deleted
+        const systemTablespaces = [
+          'mysql', 'innodb_system', 'innodb_temporary', 'sys',
+          'SYSTEM', 'SYSAUX', 'UNDOTBS1', 'TEMP', 'USERS',
+          'pg_default', 'pg_global'
+        ]
+        const isSystem = systemTablespaces.includes(record.name) ||
+                         record.spaceType?.toLowerCase() === 'system' ||
+                         record.spaceType?.toLowerCase() === 'undo'
+
+        return (
+          <Space>
+            {!isSystem && (
+              <Popconfirm
+                title="Delete Tablespace"
+                description={`Are you sure you want to delete ${record.name}?`}
+                onConfirm={() => handleDelete(record)}
+                okText="Yes"
+                cancelText="No"
+              >
+                <Button type="link" danger icon={<DeleteOutlined />}>
+                  Delete
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
+        )
+      },
     },
   ]
 

@@ -3,7 +3,8 @@
     "allow": [
       "Bash(cat:*)",
       "Bash(./gradlew.bat test)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(git -C D:dbaccman status)"
     ]
   }
 }

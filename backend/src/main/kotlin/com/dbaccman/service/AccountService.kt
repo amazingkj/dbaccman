@@ -102,8 +102,22 @@ class AccountService {
             // Set password expiration
             if (request.expireDays > 0) {
                 val alterSql = dialect.getAlterUserPasswordExpireSql(request.username, request.host, request.expireDays)
-                conn.createStatement().use { stmt ->
-                    stmt.execute(alterSql)
+                try {
+                    conn.createStatement().use { stmt ->
+                        stmt.execute(alterSql)
+                    }
+                } catch (e: SQLException) {
+                    // ORA-65048: In Oracle PDB, profile management may not work for local users
+                    // The user is already created, so just log this as a warning and continue
+                    if (e.errorCode == 65048 && dialect is OracleDialect) {
+                        AuditLogger.log(
+                            "CREATE_ACCOUNT_WARNING",
+                            "User ${request.username} created but password expiry could not be set in PDB"
+                        )
+                        // Continue - user was created successfully
+                    } else {
+                        throw e
+                    }
                 }
             }
 

@@ -1,11 +1,21 @@
 services:
   dbaccman:
+    build:
+      context: .
+      dockerfile: Dockerfile
     image: jiin724/dbaccman:latest
     container_name: dbaccman
     ports:
-      - "3080:3080"
+      - "12080:12080"
     environment:
+      - PORT=12080
       - JWT_SECRET=${JWT_SECRET:-change-this-in-production}
     volumes:
       - ./logs:/app/logs
     restart: unless-stopped
+    networks:
+      - dbaccman-network
+
+networks:
+  dbaccman-network:
+    driver: bridge

@@ -30,10 +30,14 @@ RUN mkdir -p logs && chown -R appuser:appgroup /app
 # Switch to non-root user
 USER appuser
 
-EXPOSE 3080
+EXPOSE 12080
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD wget -q --spider http://localhost:3080/health || exit 1
+    CMD wget -q --spider http://localhost:12080/health || exit 1
 
 ENTRYPOINT ["java", "-Xmx512m", "-jar", "app.jar"]
+
+# docker tag jiin724/dbaccman:latest jiin724/dbaccman:1.0.0
+# docker push jiin724/dbaccman:latest
+# docker push jiin724/dbaccman:1.0.0
