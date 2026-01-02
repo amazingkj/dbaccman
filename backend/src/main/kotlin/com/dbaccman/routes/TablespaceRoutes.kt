@@ -34,7 +34,7 @@ fun Route.tablespaceRoutes() {
                     val sessionId = call.getSessionId()
                     val request = call.receive<CreateTablespaceRequest>()
                     tablespaceService.createTablespace(sessionId, request)
-                    call.respond(HttpStatusCode.Created, mapOf("message" to "Tablespace created successfully"))
+                    call.respond(HttpStatusCode.Created, MessageResponse("Tablespace created successfully"))
                 }
             }
 
@@ -44,7 +44,7 @@ fun Route.tablespaceRoutes() {
                     val name = call.parameters["name"]
                         ?: throw IllegalArgumentException("Tablespace name not specified")
                     tablespaceService.dropTablespace(sessionId, name)
-                    call.respond(mapOf("message" to "Tablespace dropped successfully"))
+                    call.respond(MessageResponse("Tablespace dropped successfully"))
                 }
             }
 
@@ -63,7 +63,7 @@ fun Route.tablespaceRoutes() {
                     val sessionId = call.getSessionId()
                     val request = call.receive<TableLocationRequest>()
                     tablespaceService.moveTableToTablespace(sessionId, request)
-                    call.respond(mapOf("message" to "Table moved successfully"))
+                    call.respond(MessageResponse("Table moved successfully"))
                 }
             }
         }

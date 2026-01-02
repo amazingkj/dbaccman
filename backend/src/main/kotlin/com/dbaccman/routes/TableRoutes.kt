@@ -1,11 +1,8 @@
 package com.dbaccman.routes
 
-import com.dbaccman.model.CreateIndexRequest
 import com.dbaccman.service.TableService
 import com.dbaccman.util.getSessionId
 import com.dbaccman.util.handleAdminRoute
-import com.dbaccman.util.handleAdminMutationRoute
-import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.request.*
@@ -63,31 +60,20 @@ fun Route.tableRoutes() {
                     call.respond(indexes)
                 }
             }
-        }
 
-        route("/indexes") {
-            post {
-                call.handleAdminMutationRoute(logger, "Failed to create index") {
-                    val sessionId = call.getSessionId()
-                    val request = call.receive<CreateIndexRequest>()
-                    tableService.createIndex(sessionId, request)
-                    call.respond(mapOf("message" to "Index created successfully"))
-                }
-            }
-
-            delete("/{database}/{table}/{indexName}") {
-                call.handleAdminMutationRoute(logger, "Failed to drop index") {
+            get("/{database}/{table}/data") {
+                call.handleAdminRoute(logger, "Failed to fetch table data") {
                     val sessionId = call.getSessionId()
                     val database = call.parameters["database"]
                         ?: throw IllegalArgumentException("Database not specified")
                     val table = call.parameters["table"]
                         ?: throw IllegalArgumentException("Table not specified")
-                    val indexName = call.parameters["indexName"]
-                        ?: throw IllegalArgumentException("Index name not specified")
-                    tableService.dropIndex(sessionId, database, table, indexName)
-                    call.respond(mapOf("message" to "Index dropped successfully"))
+                    val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
+                    val data = tableService.getTableData(sessionId, database, table, limit)
+                    call.respond(data)
                 }
             }
         }
+
     }
 }

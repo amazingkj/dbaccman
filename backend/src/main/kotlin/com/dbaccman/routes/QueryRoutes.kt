@@ -1,6 +1,7 @@
 package com.dbaccman.routes
 
 import com.dbaccman.config.SessionConnectionManager
+import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.service.QueryExecutionException
 import com.dbaccman.service.QueryService
 import com.dbaccman.util.AuditLogger
@@ -19,6 +20,17 @@ import kotlinx.serialization.Serializable
 data class ExecuteQueryRequest(
     val query: String,
     val account: String? = null  // Account/schema to run query as
+)
+
+@Serializable
+data class SwitchSchemaRequest(
+    val schema: String
+)
+
+@Serializable
+data class SchemaInfo(
+    val currentSchema: String,
+    val availableSchemas: List<String>
 )
 
 @Serializable
@@ -51,7 +63,7 @@ fun Route.queryRoutes() {
 
                     // Check if session is still valid
                     if (!SessionConnectionManager.hasSession(sessionId)) {
-                        call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Session expired"))
+                        call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse("Session expired"))
                         return@post
                     }
 
@@ -100,7 +112,7 @@ fun Route.queryRoutes() {
                     val sessionId = call.getSessionId()
 
                     if (!SessionConnectionManager.hasSession(sessionId)) {
-                        call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Session expired"))
+                        call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse("Session expired"))
                         return@get
                     }
 
@@ -118,8 +130,85 @@ fun Route.queryRoutes() {
                 } catch (e: Exception) {
                     call.respond(
                         HttpStatusCode.InternalServerError,
-                        mapOf("error" to (e.message ?: "Failed to get audit logs"))
+                        ApiErrorResponse(e.message ?: "Failed to get audit logs")
                     )
+                }
+            }
+
+            // Get current schema and available schemas
+            get("/schemas") {
+                try {
+                    val sessionId = call.getSessionId()
+
+                    if (!SessionConnectionManager.hasSession(sessionId)) {
+                        call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse("Session expired"))
+                        return@get
+                    }
+
+                    val schemaInfo = useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+                        // Get current schema
+                        val currentSchema = conn.createStatement().use { stmt ->
+                            stmt.executeQuery(dialect.getCurrentSchemaQuery()).use { rs ->
+                                if (rs.next()) rs.getString(1) ?: "" else ""
+                            }
+                        }
+
+                        // Get available schemas
+                        val schemas = mutableListOf<String>()
+                        conn.createStatement().use { stmt ->
+                            stmt.executeQuery(dialect.getAvailableSchemasQuery()).use { rs ->
+                                while (rs.next()) {
+                                    rs.getString(1)?.let { schemas.add(it) }
+                                }
+                            }
+                        }
+
+                        SchemaInfo(currentSchema, schemas)
+                    }
+
+                    call.respond(schemaInfo)
+                } catch (e: Exception) {
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        ApiErrorResponse(e.message ?: "Failed to get schema info")
+                    )
+                }
+            }
+
+            // Switch schema
+            post("/switch-schema") {
+                val sessionId = call.getSessionId()
+
+                if (!SessionConnectionManager.hasSession(sessionId)) {
+                    call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse("Session expired"))
+                    return@post
+                }
+
+                val request = call.receive<SwitchSchemaRequest>()
+
+                if (request.schema.isBlank()) {
+                    call.respond(HttpStatusCode.BadRequest, ApiErrorResponse("Schema name cannot be empty"))
+                    return@post
+                }
+
+                try {
+                    useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+                        val switchSql = dialect.getSwitchSchemaSql(request.schema)
+                        if (switchSql != null) {
+                            conn.createStatement().use { stmt ->
+                                stmt.execute(switchSql)
+                            }
+                        }
+                    }
+
+                    call.respond(SwitchSchemaResponse(success = true, schema = request.schema))
+                } catch (e: Exception) {
+                    val errorMsg = when {
+                        e.message?.contains("ORA-01435") == true -> "Schema '${request.schema}' does not exist"
+                        e.message?.contains("ORA-01031") == true -> "Insufficient privileges to switch to schema '${request.schema}'"
+                        else -> e.message ?: "Failed to switch schema"
+                    }
+                    call.respond(HttpStatusCode.BadRequest, ApiErrorResponse(errorMsg))
                 }
             }
         }

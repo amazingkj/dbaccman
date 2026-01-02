@@ -61,7 +61,8 @@ class QueryService {
                 }
             }
 
-            val trimmedQuery = query.trim()
+            // Remove trailing semicolons (Oracle doesn't accept them via JDBC)
+            val trimmedQuery = query.trim().trimEnd(';').trim()
             val isSelect = isSelectQuery(trimmedQuery)
 
             try {

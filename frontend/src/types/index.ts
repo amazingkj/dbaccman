@@ -121,6 +121,7 @@ export interface SessionInfo {
 export interface DatabaseInfo {
   name: string
   tableCount: number
+  totalRows: number
   size: number
 }
 
@@ -139,20 +140,17 @@ export interface IndexInfo {
   type: string
 }
 
-export interface CreateIndexRequest {
-  database: string
-  table: string
-  indexName: string
-  columns: string[]
-  unique: boolean
-}
-
 // Dashboard Types
 export interface DashboardStats {
   totalAccounts: number
   activeSessions: number
   expiringSoon: number
   slowQueries: number
+  totalDatabases: number
+  totalTables: number
+  expiringAccounts: ExpiringAccount[]
+  longRunningSessions: SessionInfo[]
+  topDatabases: DatabaseInfo[]
 }
 
 // Tablespace Types

@@ -42,6 +42,7 @@ class OracleDialect : DatabaseDialect {
         FROM V${'$'}SESSION s
         LEFT JOIN V${'$'}SQL q ON s.SQL_ID = q.SQL_ID
         WHERE s.TYPE = 'USER'
+        AND s.SID != SYS_CONTEXT('USERENV', 'SID')
         ORDER BY s.LOGON_TIME DESC
     """.trimIndent()
 
@@ -53,6 +54,7 @@ class OracleDialect : DatabaseDialect {
             SUM(CASE WHEN STATUS = 'ACTIVE' AND (SYSDATE - LOGON_TIME) * 24 * 60 > 1 THEN 1 ELSE 0 END) as long_running
         FROM V${'$'}SESSION
         WHERE TYPE = 'USER'
+        AND SID != SYS_CONTEXT('USERENV', 'SID')
     """.trimIndent()
 
     override fun getLongRunningQueriesQuery(): String = """
@@ -69,6 +71,7 @@ class OracleDialect : DatabaseDialect {
         FROM V${'$'}SESSION s
         LEFT JOIN V${'$'}SQL q ON s.SQL_ID = q.SQL_ID
         WHERE s.TYPE = 'USER'
+        AND s.SID != SYS_CONTEXT('USERENV', 'SID')
         AND s.STATUS = 'ACTIVE'
         AND (SYSDATE - s.LOGON_TIME) * 24 * 60 * 60 > ?
         ORDER BY s.LOGON_TIME ASC
@@ -123,9 +126,31 @@ class OracleDialect : DatabaseDialect {
     fun getDisableLocalUserSql(): String = "ALTER SESSION SET \"_ORACLE_SCRIPT\"=false"
 
     override fun getAlterUserPasswordExpireSql(username: String, host: String, expireDays: Int): String {
-        // Oracle uses profiles for password expiry - for simplicity, just set profile
-        return "ALTER USER ${quoteIdentifier(username)} PROFILE DEFAULT"
+        // Oracle uses profiles for password expiry
+        // We assign a profile with the naming convention DBACCMAN_<days>D
+        val profileName = "DBACCMAN_${expireDays}D"
+        return "ALTER USER ${quoteIdentifier(username)} PROFILE $profileName"
     }
+
+    /**
+     * Returns SQL to create a profile with specific password lifetime.
+     */
+    fun getCreateProfileSql(expireDays: Int): String {
+        val profileName = "DBACCMAN_${expireDays}D"
+        return "CREATE PROFILE $profileName LIMIT PASSWORD_LIFE_TIME $expireDays"
+    }
+
+    /**
+     * Returns SQL to check if a profile exists.
+     */
+    fun getCheckProfileExistsSql(): String {
+        return "SELECT COUNT(*) FROM DBA_PROFILES WHERE PROFILE = ? AND RESOURCE_NAME = 'PASSWORD_LIFE_TIME'"
+    }
+
+    /**
+     * Returns the profile name for a given expiry days.
+     */
+    fun getProfileName(expireDays: Int): String = "DBACCMAN_${expireDays}D"
 
     override fun getAlterUserPasswordSql(username: String, host: String, newPassword: String): String {
         return "ALTER USER ${quoteIdentifier(username)} IDENTIFIED BY \"${escapePassword(newPassword)}\""
@@ -239,28 +264,32 @@ class OracleDialect : DatabaseDialect {
 
     override fun getDatabasesQuery(): String = """
         SELECT
-            t.TABLESPACE_NAME as name,
-            0 as table_count,
-            NVL((SELECT SUM(BYTES) FROM DBA_DATA_FILES df WHERE df.TABLESPACE_NAME = t.TABLESPACE_NAME), 0) as "size"
-        FROM DBA_TABLESPACES t
-        WHERE t.TABLESPACE_NAME NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
-        ORDER BY t.TABLESPACE_NAME
+            u.USERNAME as name,
+            NVL(t.table_count, 0) as table_count,
+            NVL(t.total_rows, 0) as total_rows,
+            NVL(t.total_size, 0) as "size"
+        FROM ALL_USERS u
+        LEFT JOIN (
+            SELECT OWNER,
+                   COUNT(*) as table_count,
+                   SUM(NVL(NUM_ROWS, 0)) as total_rows,
+                   SUM(NVL(BLOCKS, 0) * 8192) as total_size
+            FROM ALL_TABLES
+            GROUP BY OWNER
+        ) t ON u.USERNAME = t.OWNER
+        WHERE u.USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        ORDER BY u.USERNAME
     """.trimIndent()
 
     override fun getTablesQuery(): String = """
         SELECT
             TABLE_NAME as name,
             'Oracle' as engine,
-            NUM_ROWS as "rows",
-            BYTES as "size",
-            TO_CHAR(CREATED, 'YYYY-MM-DD HH24:MI:SS') as create_time
-        FROM (
-            SELECT t.TABLE_NAME, t.NUM_ROWS, s.BYTES, o.CREATED
-            FROM DBA_TABLES t
-            LEFT JOIN DBA_SEGMENTS s ON t.TABLE_NAME = s.SEGMENT_NAME AND t.OWNER = s.OWNER
-            LEFT JOIN DBA_OBJECTS o ON t.TABLE_NAME = o.OBJECT_NAME AND t.OWNER = o.OWNER AND o.OBJECT_TYPE = 'TABLE'
-            WHERE t.OWNER = UPPER(?)
-        )
+            NVL(NUM_ROWS, 0) as "rows",
+            NVL(BLOCKS * 8192, 0) as "size",
+            NVL(TO_CHAR(LAST_ANALYZED, 'YYYY-MM-DD HH24:MI:SS'), '') as create_time
+        FROM ALL_TABLES
+        WHERE OWNER = UPPER(?)
         ORDER BY TABLE_NAME
     """.trimIndent()
 
@@ -272,7 +301,7 @@ class OracleDialect : DatabaseDialect {
             '' as col_key,
             DATA_DEFAULT as default_value,
             '' as extra
-        FROM DBA_TAB_COLUMNS
+        FROM ALL_TAB_COLUMNS
         WHERE OWNER = UPPER(?)
         AND TABLE_NAME = UPPER(?)
         ORDER BY COLUMN_ID
@@ -280,45 +309,64 @@ class OracleDialect : DatabaseDialect {
 
     override fun getIndexesQuery(): String = """
         SELECT
-            i.OWNER || '.' || i.INDEX_NAME as name,
+            i.INDEX_NAME as name,
             LISTAGG(ic.COLUMN_NAME, ',') WITHIN GROUP (ORDER BY ic.COLUMN_POSITION) as columns,
             CASE WHEN i.UNIQUENESS = 'UNIQUE' THEN 1 ELSE 0 END as is_unique,
             i.INDEX_TYPE as type
-        FROM DBA_IND_COLUMNS ic
-        JOIN DBA_INDEXES i ON ic.INDEX_NAME = i.INDEX_NAME AND ic.INDEX_OWNER = i.OWNER
-        WHERE ic.TABLE_OWNER = UPPER(?)
+        FROM ALL_IND_COLUMNS ic
+        JOIN ALL_INDEXES i ON ic.INDEX_NAME = i.INDEX_NAME AND ic.INDEX_OWNER = i.OWNER
+        WHERE i.TABLE_OWNER = UPPER(?)
         AND ic.TABLE_NAME = UPPER(?)
-        GROUP BY i.OWNER, i.INDEX_NAME, i.UNIQUENESS, i.INDEX_TYPE
+        GROUP BY i.INDEX_NAME, i.UNIQUENESS, i.INDEX_TYPE
         ORDER BY i.INDEX_NAME
     """.trimIndent()
 
     override fun getCreateIndexSql(database: String, table: String, indexName: String, columns: List<String>, unique: Boolean): String {
+        // Oracle: database parameter is tablespace name, not schema
+        // USER_TABLES only shows current user's tables, so no schema prefix needed
         val cols = columns.joinToString(", ") { quoteIdentifier(it) }
         val uniqueKeyword = if (unique) "UNIQUE " else ""
-        return "CREATE ${uniqueKeyword}INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(database)}.${quoteIdentifier(table)} ($cols)"
+        return "CREATE ${uniqueKeyword}INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(table)} ($cols)"
     }
 
     override fun getDropIndexSql(database: String, table: String, indexName: String): String {
+        // Oracle: database parameter is tablespace name, not schema
         // indexName may already contain owner prefix (e.g., "OWNER.INDEX_NAME")
+        // For current user's indexes, no schema prefix needed
         return if (indexName.contains(".")) {
             val parts = indexName.split(".", limit = 2)
             "DROP INDEX ${quoteIdentifier(parts[0])}.${quoteIdentifier(parts[1])}"
         } else {
-            "DROP INDEX ${quoteIdentifier(database)}.${quoteIdentifier(indexName)}"
+            "DROP INDEX ${quoteIdentifier(indexName)}"
         }
+    }
+
+    override fun getSelectWithLimitSql(quotedTable: String, limit: Int): String {
+        // Oracle 12c+ supports FETCH FIRST syntax
+        return "SELECT * FROM $quotedTable FETCH FIRST $limit ROWS ONLY"
     }
 
     // ==================== Tablespace Queries ====================
 
     override fun getTablespacesQuery(): String = """
         SELECT
-            TABLESPACE_NAME as name,
-            CONTENTS as space_type,
-            NVL((SELECT SUM(BYTES) FROM DBA_DATA_FILES WHERE TABLESPACE_NAME = t.TABLESPACE_NAME), 0) as file_size,
-            NVL((SELECT SUM(BYTES) FROM DBA_SEGMENTS WHERE TABLESPACE_NAME = t.TABLESPACE_NAME), 0) as allocated_size,
-            STATUS as state
+            t.TABLESPACE_NAME as name,
+            t.CONTENTS as space_type,
+            NVL(df.file_size, 0) as file_size,
+            NVL(df.file_size - fs.free_size, 0) as allocated_size,
+            t.STATUS as state
         FROM DBA_TABLESPACES t
-        ORDER BY TABLESPACE_NAME
+        LEFT JOIN (
+            SELECT TABLESPACE_NAME, SUM(BYTES) as file_size
+            FROM DBA_DATA_FILES
+            GROUP BY TABLESPACE_NAME
+        ) df ON t.TABLESPACE_NAME = df.TABLESPACE_NAME
+        LEFT JOIN (
+            SELECT TABLESPACE_NAME, SUM(BYTES) as free_size
+            FROM DBA_FREE_SPACE
+            GROUP BY TABLESPACE_NAME
+        ) fs ON t.TABLESPACE_NAME = fs.TABLESPACE_NAME
+        ORDER BY t.TABLESPACE_NAME
     """.trimIndent()
 
     override fun getCreateTablespaceSql(name: String, dataFile: String?, engine: String?): String {
@@ -332,20 +380,22 @@ class OracleDialect : DatabaseDialect {
 
     override fun getTablesInTablespaceQuery(): String = """
         SELECT
-            OWNER as db_name,
-            SEGMENT_NAME as table_name,
+            t.OWNER as db_name,
+            t.TABLE_NAME as table_name,
             'Oracle' as engine,
-            0 as "rows",
-            BYTES as "size",
-            '' as create_time
-        FROM DBA_SEGMENTS
-        WHERE TABLESPACE_NAME = UPPER(?)
-        AND SEGMENT_TYPE = 'TABLE'
-        ORDER BY OWNER, SEGMENT_NAME
+            NVL(t.NUM_ROWS, 0) as "rows",
+            NVL(s.BYTES, 0) as "size",
+            NVL(TO_CHAR(t.LAST_ANALYZED, 'YYYY-MM-DD HH24:MI:SS'), '') as create_time
+        FROM DBA_TABLES t
+        LEFT JOIN DBA_SEGMENTS s ON t.OWNER = s.OWNER AND t.TABLE_NAME = s.SEGMENT_NAME AND s.SEGMENT_TYPE = 'TABLE'
+        WHERE t.TABLESPACE_NAME = UPPER(?)
+        ORDER BY t.OWNER, t.TABLE_NAME
     """.trimIndent()
 
     override fun getMoveTableToTablespaceSql(database: String, tableName: String, tablespaceName: String): String {
-        return "ALTER TABLE ${quoteIdentifier(database)}.${quoteIdentifier(tableName)} MOVE TABLESPACE ${quoteIdentifier(tablespaceName)}"
+        // Oracle: database parameter is actually tablespace name (from getDatabasesQuery), not schema
+        // USER_TABLES only shows current user's tables, so no schema prefix needed
+        return "ALTER TABLE ${quoteIdentifier(tableName)} MOVE TABLESPACE ${quoteIdentifier(tablespaceName)}"
     }
 
     // ==================== Password Expiry Queries ====================
@@ -400,12 +450,48 @@ class OracleDialect : DatabaseDialect {
         "ANONYMOUS",
         "XDB",
         "XS${'$'}NULL",
-        "ORACLE_OCM"
+        "ORACLE_OCM",
+        "GSMADMIN_INTERNAL",
+        "GSMCATUSER",
+        "GSMUSER",
+        "LBACSYS",
+        "OLAPSYS",
+        "CTXSYS",
+        "DVSYS",
+        "DVF",
+        "AUDSYS",
+        "DBSFWUSER",
+        "GGSYS",
+        "REMOTE_SCHEDULER_AGENT",
+        "SYSBACKUP",
+        "SYSDG",
+        "SYSKM",
+        "SYSRAC",
+        "SYS${'$'}UMF",
+        "OJVMSYS",
+        "SI_INFORMTN_SCHEMA",
+        "ORDDATA",
+        "ORDPLUGINS"
     )
 
     // ==================== Schema/User Context ====================
 
+    // Oracle: For SQL Console, we DO want to switch schema context
+    // Note: Don't quote the schema name - Oracle schemas are typically uppercase
+    // and quoting makes it case-sensitive which would fail for "myschema" vs MYSCHEMA
     override fun getSwitchSchemaSql(schema: String): String {
-        return "ALTER SESSION SET CURRENT_SCHEMA = ${quoteIdentifier(schema)}"
+        return "ALTER SESSION SET CURRENT_SCHEMA = ${schema.uppercase()}"
     }
+
+    override fun getCurrentSchemaQuery(): String =
+        "SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') AS current_schema FROM DUAL"
+
+    override fun getAvailableSchemasQuery(): String = """
+        SELECT u.USERNAME as schema_name
+        FROM ALL_USERS u
+        INNER JOIN DBA_USERS d ON u.USERNAME = d.USERNAME
+        WHERE u.USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        AND d.ACCOUNT_STATUS = 'OPEN'
+        ORDER BY u.USERNAME
+    """.trimIndent()
 }

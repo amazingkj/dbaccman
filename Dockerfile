@@ -41,3 +41,6 @@ ENTRYPOINT ["java", "-Xmx512m", "-jar", "app.jar"]
 # docker tag jiin724/dbaccman:latest jiin724/dbaccman:1.0.0
 # docker push jiin724/dbaccman:latest
 # docker push jiin724/dbaccman:1.0.0
+
+#  docker build --no-cache -t jiin724/dbaccman:1.0.4 .
+#  docker push jiin724/dbaccman:1.0.2

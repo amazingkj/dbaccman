@@ -56,7 +56,7 @@ fun Route.accountRoutes() {
                     val (username, host) = parseUserAtHost(userAtHost)
                     val request = call.receive<ChangePasswordRequest>()
                     accountService.changePassword(sessionId, username, host, request.password, request.expireImmediately)
-                    call.respond(mapOf("message" to "Password changed successfully"))
+                    call.respond(MessageResponse("Password changed successfully"))
                 }
             }
 
@@ -67,7 +67,7 @@ fun Route.accountRoutes() {
                         ?: throw IllegalArgumentException("User not specified")
                     val (username, host) = parseUserAtHost(userAtHost)
                     accountService.deleteAccount(sessionId, username, host)
-                    call.respond(mapOf("message" to "Account deleted successfully"))
+                    call.respond(MessageResponse("Account deleted successfully"))
                 }
             }
 
@@ -78,7 +78,7 @@ fun Route.accountRoutes() {
                         ?: throw IllegalArgumentException("User not specified")
                     val (username, host) = parseUserAtHost(userAtHost)
                     accountService.unlockAccount(sessionId, username, host)
-                    call.respond(mapOf("message" to "Account unlocked successfully"))
+                    call.respond(MessageResponse("Account unlocked successfully"))
                 }
             }
 
@@ -93,7 +93,7 @@ fun Route.accountRoutes() {
                         request.tablespace,
                         request.quota
                     )
-                    call.respond(mapOf("message" to "Tablespace set successfully"))
+                    call.respond(MessageResponse("Tablespace set successfully"))
                 }
             }
         }

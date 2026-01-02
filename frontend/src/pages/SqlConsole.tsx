@@ -16,6 +16,7 @@ import {
   Alert,
   Tooltip,
   Input,
+  Divider,
 } from 'antd'
 import {
   PlayCircleOutlined,
@@ -26,10 +27,13 @@ import {
   CopyOutlined,
   UserOutlined,
   CodeOutlined,
+  DatabaseOutlined,
+  SwapOutlined,
 } from '@ant-design/icons'
-import { queryApi, type QueryResult, type AuditLogEntry } from '../api/query'
+import { queryApi, type QueryResult, type AuditLogEntry, type SchemaInfo } from '../api/query'
 import { accountsApi } from '../api/accounts'
 import type { Account } from '../types'
+import { useAuthStore } from '../store/authStore'
 
 const { Title, Text } = Typography
 const { TextArea } = Input
@@ -44,6 +48,7 @@ interface QueryHistory {
 }
 
 function SqlConsole() {
+  const { user } = useAuthStore()
   const [query, setQuery] = useState('')
   const [selectedAccount, setSelectedAccount] = useState<string | undefined>()
   const [accounts, setAccounts] = useState<Account[]>([])
@@ -53,8 +58,19 @@ function SqlConsole() {
   const [history, setHistory] = useState<QueryHistory[]>([])
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
   const [activeTab, setActiveTab] = useState('result')
+  const [schemaInfo, setSchemaInfo] = useState<SchemaInfo | null>(null)
+  const [schemaLoading, setSchemaLoading] = useState(false)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const textAreaRef = useRef<any>(null)
+
+  const getDbTypeColor = (dbType?: string) => {
+    switch (dbType?.toUpperCase()) {
+      case 'MYSQL': return 'blue'
+      case 'POSTGRESQL': return 'cyan'
+      case 'ORACLE': return 'orange'
+      default: return 'default'
+    }
+  }
 
   const fetchAccounts = useCallback(async () => {
     try {
@@ -64,6 +80,30 @@ function SqlConsole() {
       // Ignore error - accounts list is optional
     }
   }, [])
+
+  const fetchSchemas = useCallback(async () => {
+    setSchemaLoading(true)
+    try {
+      const response = await queryApi.getSchemas()
+      setSchemaInfo(response.data)
+    } catch {
+      // Ignore error
+    } finally {
+      setSchemaLoading(false)
+    }
+  }, [])
+
+  const handleSwitchSchema = async (schema: string) => {
+    try {
+      await queryApi.switchSchema(schema)
+      message.success(`Switched to schema: ${schema}`)
+      fetchSchemas() // Refresh current schema
+    } catch (err: unknown) {
+      const errorResponse = err as { response?: { data?: { error?: string } } }
+      const errorMsg = errorResponse.response?.data?.error || 'Failed to switch schema'
+      message.error(errorMsg)
+    }
+  }
 
   const fetchAuditLogs = useCallback(async () => {
     try {
@@ -76,7 +116,8 @@ function SqlConsole() {
 
   useEffect(() => {
     fetchAccounts()
-  }, [fetchAccounts])
+    fetchSchemas()
+  }, [fetchAccounts, fetchSchemas])
 
   const executeQuery = async () => {
     if (!query.trim()) {
@@ -180,31 +221,66 @@ function SqlConsole() {
     <div>
       <Title level={2}>
         <CodeOutlined /> SQL Console
+        {user?.dbType && (
+          <Tag color={getDbTypeColor(user.dbType)} style={{ marginLeft: 12, fontSize: 14, verticalAlign: 'middle' }}>
+            {user.dbType.toUpperCase()}
+          </Tag>
+        )}
       </Title>
 
       <Row gutter={[16, 16]}>
         <Col span={24}>
           <Card size="small">
-            <Space style={{ marginBottom: 12, width: '100%' }} wrap>
-              <Select
-                placeholder="Select account (schema)"
-                style={{ width: 250 }}
-                allowClear
-                showSearch
-                value={selectedAccount}
-                onChange={setSelectedAccount}
-                optionFilterProp="label"
-                options={accounts.map(acc => ({
-                  value: acc.username,
-                  label: `${acc.username}@${acc.host}`,
-                }))}
-                optionRender={(option) => (
-                  <Space>
-                    <UserOutlined />
-                    {option.label}
-                  </Space>
-                )}
-              />
+            <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
+              <Col>
+                <Space>
+                  <DatabaseOutlined />
+                  <Text strong>Current Schema:</Text>
+                  <Tag color="green" style={{ fontSize: 14 }}>
+                    {schemaLoading ? 'Loading...' : (schemaInfo?.currentSchema || 'N/A')}
+                  </Tag>
+                </Space>
+              </Col>
+              <Col>
+                <Space>
+                  <SwapOutlined />
+                  <Select
+                    placeholder="Switch schema..."
+                    style={{ width: 200 }}
+                    showSearch
+                    loading={schemaLoading}
+                    value={undefined}
+                    onChange={handleSwitchSchema}
+                    optionFilterProp="label"
+                    options={schemaInfo?.availableSchemas.map(schema => ({
+                      value: schema,
+                      label: schema,
+                    })) || []}
+                  />
+                </Space>
+              </Col>
+              <Col flex="auto" />
+              <Col>
+                <Space>
+                  <UserOutlined />
+                  <Select
+                    placeholder="Run as account"
+                    style={{ width: 180 }}
+                    allowClear
+                    showSearch
+                    value={selectedAccount}
+                    onChange={setSelectedAccount}
+                    optionFilterProp="label"
+                    options={accounts.map(acc => ({
+                      value: acc.username,
+                      label: acc.username,
+                    }))}
+                  />
+                </Space>
+              </Col>
+            </Row>
+            <Divider style={{ margin: '8px 0' }} />
+            <Space style={{ marginBottom: 12 }} wrap>
               <Button
                 type="primary"
                 icon={<PlayCircleOutlined />}

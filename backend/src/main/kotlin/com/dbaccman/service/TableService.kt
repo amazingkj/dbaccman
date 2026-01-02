@@ -3,6 +3,7 @@ package com.dbaccman.service
 import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.model.*
 import com.dbaccman.util.AuditLogger
+import kotlinx.serialization.Serializable
 
 class TableService {
 
@@ -18,6 +19,7 @@ class TableService {
                             DatabaseInfo(
                                 name = rs.getString("name"),
                                 tableCount = rs.getInt("table_count"),
+                                totalRows = rs.getLong("total_rows"),
                                 size = rs.getLong("size")
                             )
                         )
@@ -132,4 +134,54 @@ class TableService {
             AuditLogger.log("DROP_INDEX", "Dropped index $indexName from $database.$table")
         }
     }
+
+    fun getTableData(sessionId: String, database: String, table: String, limit: Int): TableDataResult {
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            // Switch to schema if needed
+            val switchSql = dialect.getSwitchSchemaSql(database)
+            if (switchSql != null) {
+                conn.createStatement().use { stmt ->
+                    stmt.execute(switchSql)
+                }
+            }
+
+            // Build SELECT query with proper identifier quoting
+            val quotedTable = dialect.quoteIdentifier(table)
+            val sql = dialect.getSelectWithLimitSql(quotedTable, limit)
+
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery(sql).use { rs ->
+                    val metaData = rs.metaData
+                    val columnCount = metaData.columnCount
+
+                    val columns = (1..columnCount).map { metaData.getColumnLabel(it) }
+                    val rows = mutableListOf<List<String?>>()
+
+                    while (rs.next()) {
+                        val row = (1..columnCount).map { i ->
+                            try {
+                                rs.getObject(i)?.toString()
+                            } catch (e: Exception) {
+                                "[Error]"
+                            }
+                        }
+                        rows.add(row)
+                    }
+
+                    TableDataResult(
+                        columns = columns,
+                        rows = rows,
+                        rowCount = rows.size
+                    )
+                }
+            }
+        }
+    }
 }
+
+@Serializable
+data class TableDataResult(
+    val columns: List<String>,
+    val rows: List<List<String?>>,
+    val rowCount: Int
+)

@@ -1,21 +1,26 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
-import { Layout, theme, Tag, Space } from 'antd'
-import { DatabaseOutlined } from '@ant-design/icons'
+import { Outlet, useNavigate } from 'react-router-dom'
+import { Layout, theme, Tag, Space, Button, Tooltip } from 'antd'
+import { DatabaseOutlined, LogoutOutlined } from '@ant-design/icons'
 import { useAuthStore } from '../../store/authStore'
+import { useAuth } from '../../hooks/useAuth'
 import Sidebar from './Sidebar'
+import SessionTimeout from '../common/SessionTimeout'
 
 const { Header, Content, Footer } = Layout
 
 function MainLayout() {
   const [collapsed, setCollapsed] = useState(false)
   const { user } = useAuthStore()
+  const { logout } = useAuth()
+  const navigate = useNavigate()
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken()
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
+      <SessionTimeout />
       <Sidebar collapsed={collapsed} onCollapse={setCollapsed} />
       <Layout>
         <Header
@@ -27,16 +32,31 @@ function MainLayout() {
             alignItems: 'center',
           }}
         >
-          <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-            DBAccMan
+          <div
+            style={{ fontSize: '18px', fontWeight: 'bold', cursor: 'pointer' }}
+            onClick={() => navigate('/dashboard')}
+          >
+            D-BAM
           </div>
           {user && (
-            <Space>
-              <DatabaseOutlined />
-              <span>{user.username}@{user.host}:{user.port}</span>
-              <Tag color={user.role === 'admin' ? 'blue' : 'default'}>
-                {user.role.toUpperCase()}
-              </Tag>
+            <Space size="middle">
+              <Space>
+                <DatabaseOutlined />
+                <span>{user.username}@{user.host}:{user.port}</span>
+                <Tag color={user.role === 'admin' ? 'blue' : 'default'}>
+                  {user.role.toUpperCase()}
+                </Tag>
+              </Space>
+              <Tooltip title="Logout">
+                <Button
+                  type="text"
+                  danger
+                  icon={<LogoutOutlined />}
+                  onClick={logout}
+                >
+                  Logout
+                </Button>
+              </Tooltip>
             </Space>
           )}
         </Header>
@@ -53,7 +73,7 @@ function MainLayout() {
           </div>
         </Content>
         <Footer style={{ textAlign: 'center' }}>
-          DBAccMan ©{new Date().getFullYear()} - Click, Not Command
+          D-BAM ©{new Date().getFullYear()} - Click, Not Command
           <br />
           <a
             href="https://github.com/amazingkj/dbaccman/issues"

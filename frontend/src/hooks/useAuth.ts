@@ -4,6 +4,7 @@ import { AxiosError } from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { useConnectionStore } from '../store/connectionStore'
 import { authApi } from '../api/auth'
+import { resetSessionExpiredFlag } from '../api/client'
 import type { LoginRequest, ApiError } from '../types'
 import { DATABASE_TYPES } from '../types'
 
@@ -18,6 +19,7 @@ export function useAuth() {
       const data = response.data
 
       setAuth(data)
+      resetSessionExpiredFlag()
 
       // Save to recent connections
       addRecentConnection({

@@ -16,6 +16,7 @@ import {
   Col,
   Statistic,
   Alert,
+  Select,
 } from 'antd'
 import {
   PlusOutlined,
@@ -23,7 +24,7 @@ import {
   LockOutlined,
   UnlockOutlined,
   DeleteOutlined,
-  KeyOutlined,
+  SyncOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
 import { accountsApi } from '../api/accounts'
@@ -40,6 +41,8 @@ function Accounts() {
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null)
   const [form] = Form.useForm()
   const [passwordForm] = Form.useForm()
+  const [searchText, setSearchText] = useState('')
+  const [searchColumn, setSearchColumn] = useState<string>('all')
 
   const fetchAccounts = async () => {
     setLoading(true)
@@ -131,22 +134,54 @@ function Accounts() {
     return systemUsers.includes(username.toUpperCase()) || username.toUpperCase().startsWith('C##')
   }
 
+  // Search filter function
+  const filterBySearch = (account: Account) => {
+    if (!searchText) return true
+    const search = searchText.toLowerCase()
+
+    if (searchColumn === 'all') {
+      const status = account.accountLocked ? 'locked' : 'active'
+      return (
+        account.username?.toLowerCase().includes(search) ||
+        account.host?.toLowerCase().includes(search) ||
+        account.passwordLastChanged?.toLowerCase().includes(search) ||
+        status.includes(search)
+      )
+    }
+
+    if (searchColumn === 'status') {
+      const status = account.accountLocked ? 'locked' : 'active'
+      return status.includes(search)
+    }
+
+    const value = account[searchColumn as keyof Account]
+    if (value === null || value === undefined) return false
+    return value.toString().toLowerCase().includes(search)
+  }
+
+  const filteredAccounts = accounts.filter(filterBySearch)
+
   const columns = [
     {
       title: 'Username',
       dataIndex: 'username',
       key: 'username',
+      width: 150,
+      ellipsis: true,
       sorter: (a: Account, b: Account) => a.username.localeCompare(b.username),
     },
     {
       title: 'Host',
       dataIndex: 'host',
       key: 'host',
+      width: 120,
+      ellipsis: true,
     },
     {
       title: 'Password Expiry',
       dataIndex: 'passwordLifetime',
       key: 'passwordLifetime',
+      width: 120,
       sorter: (a: Account, b: Account) => {
         // null (Never) should be at the end when sorting ascending
         if (a.passwordLifetime === null && b.passwordLifetime === null) return 0
@@ -161,11 +196,7 @@ function Accounts() {
       title: 'Status',
       dataIndex: 'accountLocked',
       key: 'accountLocked',
-      filters: [
-        { text: 'Active', value: false },
-        { text: 'Locked', value: true },
-      ],
-      onFilter: (value: boolean | React.Key, record: Account) => record.accountLocked === value,
+      width: 100,
       render: (locked: boolean) =>
         locked ? (
           <Tag color="red" icon={<LockOutlined />}>
@@ -181,6 +212,8 @@ function Accounts() {
       title: 'Last Password Change',
       dataIndex: 'passwordLastChanged',
       key: 'passwordLastChanged',
+      width: 160,
+      ellipsis: true,
       sorter: (a: Account, b: Account) => {
         // null should be at the end
         if (!a.passwordLastChanged && !b.passwordLastChanged) return 0
@@ -194,6 +227,7 @@ function Accounts() {
     {
       title: 'Actions',
       key: 'actions',
+      width: 280,
       render: (_: unknown, record: Account) => {
         const isSystemUser = isOracleSystemUser(record.username)
 
@@ -205,7 +239,7 @@ function Accounts() {
           <Space>
             <Button
               type="link"
-              icon={<KeyOutlined />}
+              icon={<SyncOutlined />}
               onClick={() => {
                 setSelectedAccount(record)
                 setPasswordModalOpen(true)
@@ -241,7 +275,7 @@ function Accounts() {
 
   return (
     <div>
-      <Title level={2}>Account Management</Title>
+      <Title level={2}>Accounts</Title>
 
       {expiringAccounts.length > 0 && (
         <Alert
@@ -293,22 +327,48 @@ function Accounts() {
         </Col>
       </Row>
 
-      <Space style={{ marginBottom: 16 }}>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setCreateModalOpen(true)}
-        >
-          Create Account
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={fetchAccounts}>
-          Refresh
-        </Button>
-      </Space>
+      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Space>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setCreateModalOpen(true)}
+            >
+              Create Account
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchAccounts}>
+              Refresh
+            </Button>
+          </Space>
+        </Col>
+        <Col flex="auto" style={{ textAlign: 'right' }}>
+          <Space>
+            <Select
+              value={searchColumn}
+              onChange={setSearchColumn}
+              style={{ width: 120 }}
+              size="middle"
+            >
+              <Select.Option value="all">All Columns</Select.Option>
+              <Select.Option value="username">Username</Select.Option>
+              <Select.Option value="host">Host</Select.Option>
+              <Select.Option value="status">Status</Select.Option>
+            </Select>
+            <Input.Search
+              placeholder="Search..."
+              allowClear
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 200 }}
+            />
+          </Space>
+        </Col>
+      </Row>
 
       <Table
         columns={columns}
-        dataSource={accounts}
+        dataSource={filteredAccounts}
         loading={loading}
         rowKey={(record) => `${record.username}@${record.host}`}
         pagination={{ pageSize: 10 }}

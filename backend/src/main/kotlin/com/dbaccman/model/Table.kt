@@ -6,6 +6,7 @@ import kotlinx.serialization.Serializable
 data class DatabaseInfo(
     val name: String,
     val tableCount: Int,
+    val totalRows: Long,
     val size: Long
 )
 

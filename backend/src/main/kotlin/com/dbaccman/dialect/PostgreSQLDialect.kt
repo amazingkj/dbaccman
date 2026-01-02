@@ -39,6 +39,7 @@ class PostgreSQLDialect : DatabaseDialect {
             query
         FROM pg_stat_activity
         WHERE backend_type = 'client backend'
+        AND pid != pg_backend_pid()
         ORDER BY backend_start DESC
     """.trimIndent()
 
@@ -50,6 +51,7 @@ class PostgreSQLDialect : DatabaseDialect {
             SUM(CASE WHEN state = 'active' AND EXTRACT(EPOCH FROM (NOW() - query_start)) > 60 THEN 1 ELSE 0 END) as long_running
         FROM pg_stat_activity
         WHERE backend_type = 'client backend'
+        AND pid != pg_backend_pid()
     """.trimIndent()
 
     override fun getLongRunningQueriesQuery(): String = """
@@ -64,6 +66,7 @@ class PostgreSQLDialect : DatabaseDialect {
             query
         FROM pg_stat_activity
         WHERE backend_type = 'client backend'
+        AND pid != pg_backend_pid()
         AND state = 'active'
         AND EXTRACT(EPOCH FROM (NOW() - query_start)) > ?
         ORDER BY query_start ASC
@@ -197,12 +200,22 @@ class PostgreSQLDialect : DatabaseDialect {
 
     override fun getDatabasesQuery(): String = """
         SELECT
-            schema_name as name,
-            (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = schema_name) as table_count,
-            0::bigint as "size"
-        FROM information_schema.schemata
-        WHERE schema_name NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
-        ORDER BY schema_name
+            s.schema_name as name,
+            COALESCE(t.table_count, 0)::int as table_count,
+            COALESCE(t.total_rows, 0)::bigint as total_rows,
+            COALESCE(t.total_size, 0)::bigint as "size"
+        FROM information_schema.schemata s
+        LEFT JOIN (
+            SELECT
+                schemaname,
+                COUNT(*) as table_count,
+                SUM(COALESCE(n_live_tup, 0)) as total_rows,
+                SUM(pg_total_relation_size(schemaname || '.' || relname)) as total_size
+            FROM pg_stat_user_tables
+            GROUP BY schemaname
+        ) t ON s.schema_name = t.schemaname
+        WHERE s.schema_name NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
+        ORDER BY s.schema_name
     """.trimIndent()
 
     override fun getTablesQuery(): String = """
@@ -258,6 +271,10 @@ class PostgreSQLDialect : DatabaseDialect {
 
     override fun getDropIndexSql(database: String, table: String, indexName: String): String {
         return "DROP INDEX IF EXISTS ${quoteIdentifier(database)}.${quoteIdentifier(indexName)}"
+    }
+
+    override fun getSelectWithLimitSql(quotedTable: String, limit: Int): String {
+        return "SELECT * FROM $quotedTable LIMIT $limit"
     }
 
     // ==================== Tablespace Queries ====================
@@ -343,4 +360,13 @@ class PostgreSQLDialect : DatabaseDialect {
         // PostgreSQL uses SET search_path to switch schema
         return "SET search_path TO ${quoteIdentifier(schema)}"
     }
+
+    override fun getCurrentSchemaQuery(): String = "SELECT current_schema() AS current_schema"
+
+    override fun getAvailableSchemasQuery(): String = """
+        SELECT schema_name
+        FROM information_schema.schemata
+        WHERE schema_name NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
+        ORDER BY schema_name
+    """.trimIndent()
 }

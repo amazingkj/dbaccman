@@ -24,7 +24,7 @@ data class SessionPool(
 object SessionConnectionManager {
     private val logger = LoggerFactory.getLogger(SessionConnectionManager::class.java)
     private val sessionPools = ConcurrentHashMap<String, SessionPool>()
-    private val SESSION_TIMEOUT_MS = 30 * 60 * 1000L // 30 minutes
+    private val SESSION_TIMEOUT_MS = 35 * 60 * 1000L // 35 minutes
     private val CLEANUP_INTERVAL_MS = 60 * 1000L // 1 minute
 
     @Volatile
@@ -36,6 +36,7 @@ object SessionConnectionManager {
 
     private fun startCleanupThread() {
         cleanupThread = thread(isDaemon = true, name = "session-cleanup") {
+            logger.info("Session cleanup thread started (timeout: ${SESSION_TIMEOUT_MS / 60000}min, interval: ${CLEANUP_INTERVAL_MS / 1000}s)")
             while (!Thread.currentThread().isInterrupted) {
                 try {
                     Thread.sleep(CLEANUP_INTERVAL_MS)
@@ -75,8 +76,8 @@ object SessionConnectionManager {
             minimumIdle = 1
             isAutoCommit = true
             connectionTimeout = 10000 // 10 seconds
-            idleTimeout = 300000 // 5 minutes
-            maxLifetime = 900000 // 15 minutes
+            idleTimeout = 10 * 60 * 1000 // 10 minutes
+            maxLifetime = 30 * 60 * 1000 // 30 minutes
             connectionTestQuery = dialect.getConnectionTestQuery()
             poolName = "session-$sessionId"
         }
@@ -165,7 +166,7 @@ object SessionConnectionManager {
     }
 
     /**
-     * Cleanup expired sessions (idle for more than 30 minutes).
+     * Cleanup expired sessions (idle for more than SESSION_TIMEOUT_MS).
      */
     private fun cleanupExpiredSessions() {
         val expireThreshold = System.currentTimeMillis() - SESSION_TIMEOUT_MS

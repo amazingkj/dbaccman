@@ -43,6 +43,7 @@ class MySQLDialect : DatabaseDialect {
             state,
             info as query
         FROM information_schema.processlist
+        WHERE id != CONNECTION_ID()
         ORDER BY time DESC
     """.trimIndent()
 
@@ -53,6 +54,7 @@ class MySQLDialect : DatabaseDialect {
             SUM(CASE WHEN command = 'Sleep' THEN 1 ELSE 0 END) as sleeping,
             SUM(CASE WHEN time > 60 AND command != 'Sleep' THEN 1 ELSE 0 END) as long_running
         FROM information_schema.processlist
+        WHERE id != CONNECTION_ID()
     """.trimIndent()
 
     override fun getLongRunningQueriesQuery(): String = """
@@ -66,7 +68,8 @@ class MySQLDialect : DatabaseDialect {
             state,
             info as query
         FROM information_schema.processlist
-        WHERE command != 'Sleep'
+        WHERE id != CONNECTION_ID()
+        AND command != 'Sleep'
         AND time > ?
         ORDER BY time DESC
     """.trimIndent()
@@ -206,6 +209,7 @@ class MySQLDialect : DatabaseDialect {
         SELECT
             s.schema_name as name,
             COUNT(t.table_name) as table_count,
+            IFNULL(SUM(t.table_rows), 0) as total_rows,
             IFNULL(SUM(t.data_length + t.index_length), 0) as size
         FROM information_schema.schemata s
         LEFT JOIN information_schema.tables t
@@ -265,6 +269,10 @@ class MySQLDialect : DatabaseDialect {
         return "DROP INDEX ${quoteIdentifier(indexName)} ON ${quoteIdentifier(database)}.${quoteIdentifier(table)}"
     }
 
+    override fun getSelectWithLimitSql(quotedTable: String, limit: Int): String {
+        return "SELECT * FROM $quotedTable LIMIT $limit"
+    }
+
     // ==================== Tablespace Queries ====================
 
     override fun getTablespacesQuery(): String = """
@@ -295,7 +303,7 @@ class MySQLDialect : DatabaseDialect {
             t.ENGINE as engine,
             IFNULL(t.TABLE_ROWS, 0) as `rows`,
             IFNULL(t.DATA_LENGTH + t.INDEX_LENGTH, 0) as size,
-            DATE_FORMAT(t.CREATE_TIME, '%Y-%m-%d %H:%i:%s') as create_time
+            IFNULL(DATE_FORMAT(t.CREATE_TIME, '%Y-%m-%d %H:%i:%s'), '') as create_time
         FROM information_schema.TABLES t
         JOIN information_schema.INNODB_TABLES it
             ON CONCAT(t.TABLE_SCHEMA, '/', t.TABLE_NAME) = it.NAME
@@ -368,4 +376,13 @@ class MySQLDialect : DatabaseDialect {
         // MySQL uses USE database to switch schema
         return "USE ${quoteIdentifier(schema)}"
     }
+
+    override fun getCurrentSchemaQuery(): String = "SELECT DATABASE() AS current_schema"
+
+    override fun getAvailableSchemasQuery(): String = """
+        SELECT SCHEMA_NAME as schema_name
+        FROM information_schema.SCHEMATA
+        WHERE SCHEMA_NAME NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
+        ORDER BY SCHEMA_NAME
+    """.trimIndent()
 }

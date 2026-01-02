@@ -16,6 +16,7 @@ import {
   Statistic,
   Select,
   Progress,
+  Tooltip,
 } from 'antd'
 import {
   PlusOutlined,
@@ -23,6 +24,7 @@ import {
   DeleteOutlined,
   DatabaseOutlined,
   SwapOutlined,
+  RightOutlined,
 } from '@ant-design/icons'
 import { tablespacesApi } from '../api/tablespaces'
 import { tablesApi } from '../api/tables'
@@ -50,6 +52,8 @@ function Tablespaces() {
   const [createModalOpen, setCreateModalOpen] = useState(false)
   const [moveModalOpen, setMoveModalOpen] = useState(false)
   const [selectedDatabase, setSelectedDatabase] = useState<string>('')
+  const [searchText, setSearchText] = useState('')
+  const [searchColumn, setSearchColumn] = useState<string>('all')
   const [form] = Form.useForm()
   const [moveForm] = Form.useForm()
 
@@ -156,25 +160,50 @@ function Tablespaces() {
   const totalAllocated = tablespaces.reduce((sum, ts) => sum + ts.allocatedSize, 0)
   const generalCount = tablespaces.filter(ts => ts.spaceType === 'General').length
 
+  // Search filter function
+  const filterBySearch = (ts: TablespaceInfo) => {
+    if (!searchText) return true
+    const search = searchText.toLowerCase()
+
+    if (searchColumn === 'all') {
+      return (
+        ts.name?.toLowerCase().includes(search) ||
+        ts.spaceType?.toLowerCase().includes(search) ||
+        ts.state?.toLowerCase().includes(search)
+      )
+    }
+
+    const value = ts[searchColumn as keyof TablespaceInfo]
+    if (value === null || value === undefined) return false
+    return value.toString().toLowerCase().includes(search)
+  }
+
+  const filteredTablespaces = tablespaces.filter(filterBySearch)
+
   const columns = [
     {
       title: 'Name',
       dataIndex: 'name',
       key: 'name',
+      width: 180,
+      ellipsis: true,
       render: (name: string, record: TablespaceInfo) => (
-        <Button
-          type="link"
-          onClick={() => setSelectedTablespace(record)}
-          style={{ padding: 0 }}
-        >
-          <DatabaseOutlined /> {name}
-        </Button>
+        <Tooltip title="Click to view tables in this tablespace">
+          <Button
+            type="link"
+            onClick={() => setSelectedTablespace(record)}
+            style={{ padding: 0 }}
+          >
+            <DatabaseOutlined /> {name} <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+          </Button>
+        </Tooltip>
       ),
     },
     {
       title: 'Type',
       dataIndex: 'spaceType',
       key: 'spaceType',
+      width: 100,
       render: (type: string) => (
         <Tag color={type === 'General' ? 'blue' : type === 'Single' ? 'green' : 'default'}>
           {type}
@@ -185,6 +214,7 @@ function Tablespaces() {
       title: 'File Size',
       dataIndex: 'fileSize',
       key: 'fileSize',
+      width: 100,
       render: (size: number) => formatBytes(size),
       sorter: (a: TablespaceInfo, b: TablespaceInfo) => a.fileSize - b.fileSize,
     },
@@ -192,11 +222,13 @@ function Tablespaces() {
       title: 'Allocated',
       dataIndex: 'allocatedSize',
       key: 'allocatedSize',
+      width: 100,
       render: (size: number) => formatBytes(size),
     },
     {
       title: 'Usage',
       key: 'usage',
+      width: 120,
       render: (_: unknown, record: TablespaceInfo) => {
         const percent = record.fileSize > 0
           ? Math.round((record.allocatedSize / record.fileSize) * 100)
@@ -208,6 +240,7 @@ function Tablespaces() {
       title: 'State',
       dataIndex: 'state',
       key: 'state',
+      width: 80,
       render: (state: string) => (
         <Tag color={state === 'active' ? 'green' : 'red'}>{state}</Tag>
       ),
@@ -215,6 +248,7 @@ function Tablespaces() {
     {
       title: 'Actions',
       key: 'actions',
+      width: 100,
       render: (_: unknown, record: TablespaceInfo) => {
         // System tablespaces that should not be deleted
         const systemTablespaces = [
@@ -252,29 +286,28 @@ function Tablespaces() {
       title: 'Table Name',
       dataIndex: 'name',
       key: 'name',
-    },
-    {
-      title: 'Engine',
-      dataIndex: 'engine',
-      key: 'engine',
+      width: 200,
+      ellipsis: true,
     },
     {
       title: 'Rows',
       dataIndex: 'rows',
       key: 'rows',
+      width: 100,
       render: (rows: number) => rows.toLocaleString(),
     },
     {
       title: 'Size',
       dataIndex: 'size',
       key: 'size',
+      width: 100,
       render: (size: number) => formatBytes(size),
     },
   ]
 
   return (
     <div>
-      <Title level={2}>Tablespace Management</Title>
+      <Title level={2}>Tablespaces</Title>
 
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={6}>
@@ -299,26 +332,59 @@ function Tablespaces() {
         </Col>
       </Row>
 
-      <Space style={{ marginBottom: 16 }}>
-        <Button
-          type="primary"
-          icon={<PlusOutlined />}
-          onClick={() => setCreateModalOpen(true)}
-        >
-          Create Tablespace
-        </Button>
-        <Button icon={<ReloadOutlined />} onClick={fetchTablespaces}>
-          Refresh
-        </Button>
-      </Space>
+      <Row gutter={16} align="middle" style={{ marginBottom: 16 }}>
+        <Col>
+          <Space>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setCreateModalOpen(true)}
+            >
+              Create Tablespace
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={fetchTablespaces}>
+              Refresh
+            </Button>
+          </Space>
+        </Col>
+        <Col flex="auto" style={{ textAlign: 'right' }}>
+          <Space>
+            <Select
+              value={searchColumn}
+              onChange={setSearchColumn}
+              style={{ width: 120 }}
+              size="middle"
+            >
+              <Option value="all">All Columns</Option>
+              <Option value="name">Name</Option>
+              <Option value="spaceType">Type</Option>
+              <Option value="state">State</Option>
+            </Select>
+            <Input.Search
+              placeholder="Search..."
+              allowClear
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              style={{ width: 200 }}
+            />
+          </Space>
+        </Col>
+      </Row>
 
       <Table
         columns={columns}
-        dataSource={tablespaces}
+        dataSource={filteredTablespaces}
         loading={loading}
         rowKey="name"
         pagination={{ pageSize: 10 }}
         style={{ marginBottom: 24 }}
+        rowClassName={(record) =>
+          selectedTablespace?.name === record.name ? 'ant-table-row-selected' : ''
+        }
+        onRow={(record) => ({
+          onClick: () => setSelectedTablespace(record),
+          style: { cursor: 'pointer' },
+        })}
       />
 
       {selectedTablespace && (

@@ -65,6 +65,8 @@ function Permissions() {
   const [grantModalOpen, setGrantModalOpen] = useState(false)
   const [tablespaceModalOpen, setTablespaceModalOpen] = useState(false)
   const [tablespaces, setTablespaces] = useState<TablespaceInfo[]>([])
+  const [searchText, setSearchText] = useState('')
+  const [searchColumn, setSearchColumn] = useState<string>('all')
   const [form] = Form.useForm()
   const [tablespaceForm] = Form.useForm()
 
@@ -163,6 +165,26 @@ function Permissions() {
     })
   }
 
+  // Search filter function
+  const filterBySearch = (permission: Permission) => {
+    if (!searchText) return true
+    const search = searchText.toLowerCase()
+
+    if (searchColumn === 'all') {
+      return (
+        permission.database?.toLowerCase().includes(search) ||
+        permission.table?.toLowerCase().includes(search) ||
+        permission.privilege?.toLowerCase().includes(search)
+      )
+    }
+
+    const value = permission[searchColumn as keyof Permission]
+    if (value === null || value === undefined) return false
+    return value.toString().toLowerCase().includes(search)
+  }
+
+  const filteredPermissions = permissions.filter(filterBySearch)
+
   const handleSetTablespace = async (values: { tablespace: string; quota?: string }) => {
     if (!selectedAccount) return
 
@@ -193,12 +215,16 @@ function Permissions() {
       title: 'Database',
       dataIndex: 'database',
       key: 'database',
+      width: 150,
+      ellipsis: true,
       render: (db: string) => <Tag color="blue">{db}</Tag>,
     },
     {
       title: 'Table',
       dataIndex: 'table',
       key: 'table',
+      width: 150,
+      ellipsis: true,
       render: (table: string) =>
         table === '*' ? <Tag>All Tables</Tag> : <Tag color="green">{table}</Tag>,
     },
@@ -206,6 +232,7 @@ function Permissions() {
       title: 'Privilege',
       dataIndex: 'privilege',
       key: 'privilege',
+      width: 120,
       render: (privilege: string) => {
         const color =
           privilege === 'SELECT'
@@ -222,12 +249,14 @@ function Permissions() {
       title: 'Grant Option',
       dataIndex: 'isGrantable',
       key: 'isGrantable',
+      width: 120,
       render: (isGrantable: boolean) =>
         isGrantable ? <Tag color="purple">WITH GRANT</Tag> : '-',
     },
     {
       title: 'Actions',
       key: 'actions',
+      width: 100,
       render: (_: unknown, record: Permission) => (
         <Button
           type="link"
@@ -243,7 +272,7 @@ function Permissions() {
 
   return (
     <div>
-      <Title level={2}>Permission Management</Title>
+      <Title level={2}>Permissions</Title>
 
       <Card style={{ marginBottom: 24 }}>
         <Row gutter={16} align="middle">
@@ -313,12 +342,38 @@ function Permissions() {
             }
             style={{ marginBottom: 16 }}
           >
-            <Text>Total: {permissions.length} permission(s)</Text>
+            <Row gutter={16} align="middle">
+              <Col>
+                <Text>Total: {filteredPermissions.length} permission(s)</Text>
+              </Col>
+              <Col flex="auto" style={{ textAlign: 'right' }}>
+                <Space>
+                  <Select
+                    value={searchColumn}
+                    onChange={setSearchColumn}
+                    style={{ width: 120 }}
+                    size="middle"
+                  >
+                    <Option value="all">All Columns</Option>
+                    <Option value="database">Database</Option>
+                    <Option value="table">Table</Option>
+                    <Option value="privilege">Privilege</Option>
+                  </Select>
+                  <Input.Search
+                    placeholder="Search..."
+                    allowClear
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    style={{ width: 200 }}
+                  />
+                </Space>
+              </Col>
+            </Row>
           </Card>
 
           <Table
             columns={columns}
-            dataSource={permissions}
+            dataSource={filteredPermissions}
             loading={loading}
             rowKey={(record) =>
               `${record.database}-${record.table}-${record.privilege}`

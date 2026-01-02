@@ -23,64 +23,22 @@ import {
   RightOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/authStore'
-import { accountsApi } from '../api/accounts'
-import { sessionsApi } from '../api/sessions'
-import { tablesApi } from '../api/tables'
+import { dashboardApi } from '../api/dashboard'
 import UserDashboard from './UserDashboard'
-import type { ExpiringAccount, SessionInfo, DatabaseInfo } from '../types'
+import type { DashboardStats } from '../types'
 
 const { Title, Text } = Typography
-
-interface DashboardStats {
-  totalAccounts: number
-  activeSessions: number
-  expiringSoon: number
-  slowQueries: number
-  totalDatabases: number
-  totalTables: number
-}
 
 function AdminDashboard() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
-  const [stats, setStats] = useState<DashboardStats>({
-    totalAccounts: 0,
-    activeSessions: 0,
-    expiringSoon: 0,
-    slowQueries: 0,
-    totalDatabases: 0,
-    totalTables: 0,
-  })
-  const [expiringAccounts, setExpiringAccounts] = useState<ExpiringAccount[]>([])
-  const [longRunningSessions, setLongRunningSessions] = useState<SessionInfo[]>([])
-  const [databases, setDatabases] = useState<DatabaseInfo[]>([])
+  const [stats, setStats] = useState<DashboardStats | null>(null)
 
   const fetchDashboardData = async () => {
     setLoading(true)
     try {
-      const [accountsRes, expiringRes, sessionsRes, dbRes] = await Promise.all([
-        accountsApi.list(),
-        accountsApi.getExpiring(30),
-        sessionsApi.getActive(),
-        tablesApi.getDatabases(),
-      ])
-
-      const sessions = sessionsRes.data
-      const activeSessions = sessions.filter((s) => s.command !== 'Sleep')
-      const slowQueries = sessions.filter((s) => s.time > 60 && s.command !== 'Sleep')
-
-      setStats({
-        totalAccounts: accountsRes.data.length,
-        activeSessions: activeSessions.length,
-        expiringSoon: expiringRes.data.length,
-        slowQueries: slowQueries.length,
-        totalDatabases: dbRes.data.length,
-        totalTables: dbRes.data.reduce((sum, db) => sum + db.tableCount, 0),
-      })
-
-      setExpiringAccounts(expiringRes.data.slice(0, 5))
-      setLongRunningSessions(slowQueries.slice(0, 5))
-      setDatabases(dbRes.data.slice(0, 5))
+      const response = await dashboardApi.getStats()
+      setStats(response.data)
     } catch (error) {
       console.error('Failed to fetch dashboard data:', error)
     } finally {
@@ -90,11 +48,9 @@ function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboardData()
-    const interval = setInterval(fetchDashboardData, 30000) // Refresh every 30 seconds
-    return () => clearInterval(interval)
   }, [])
 
-  if (loading) {
+  if (loading || !stats) {
     return (
       <div style={{ textAlign: 'center', padding: '100px 0' }}>
         <Spin size="large" />
@@ -197,7 +153,7 @@ function AdminDashboard() {
           type="error"
           showIcon
           action={
-            <Button size="small" danger onClick={() => navigate('/sessions')}>
+            <Button size="small" danger onClick={() => navigate('/sessions?filter=slow')}>
               View Sessions
             </Button>
           }
@@ -221,10 +177,10 @@ function AdminDashboard() {
               </Button>
             }
           >
-            {expiringAccounts.length > 0 ? (
+            {stats.expiringAccounts.length > 0 ? (
               <List
                 size="small"
-                dataSource={expiringAccounts}
+                dataSource={stats.expiringAccounts}
                 renderItem={(item) => (
                   <List.Item>
                     <Space>
@@ -257,10 +213,10 @@ function AdminDashboard() {
               </Button>
             }
           >
-            {longRunningSessions.length > 0 ? (
+            {stats.longRunningSessions.length > 0 ? (
               <List
                 size="small"
-                dataSource={longRunningSessions}
+                dataSource={stats.longRunningSessions}
                 renderItem={(item) => (
                   <List.Item>
                     <Space>
@@ -291,10 +247,10 @@ function AdminDashboard() {
               </Button>
             }
           >
-            {databases.length > 0 ? (
+            {stats.topDatabases.length > 0 ? (
               <List
                 size="small"
-                dataSource={databases}
+                dataSource={stats.topDatabases}
                 renderItem={(item) => (
                   <List.Item>
                     <Space>

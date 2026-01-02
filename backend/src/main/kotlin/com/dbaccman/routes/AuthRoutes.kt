@@ -85,7 +85,7 @@ fun Route.authRoutes() {
 
                 // Translate database errors to user-friendly messages
                 val errorMessage = getConnectionErrorMessage(e, request.host, effectivePort, request.dbType)
-                call.respond(HttpStatusCode.Unauthorized, mapOf("error" to errorMessage))
+                call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse(errorMessage))
             }
         }
 
@@ -100,7 +100,7 @@ fun Route.authRoutes() {
                     AuditLogger.log("LOGOUT", "Session $sessionId closed")
                 }
             }
-            call.respond(mapOf("message" to "Logged out successfully"))
+            call.respond(MessageResponse("Logged out successfully"))
         }
 
         authenticate("auth-jwt") {
@@ -115,19 +115,19 @@ fun Route.authRoutes() {
 
                     // Check if session is still valid
                     if (!SessionConnectionManager.hasSession(sessionId)) {
-                        call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Session expired"))
+                        call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse("Session expired"))
                         return@get
                     }
 
-                    call.respond(mapOf(
-                        "username" to username,
-                        "role" to role,
-                        "host" to host,
-                        "port" to port,
-                        "dbType" to dbType.name
+                    call.respond(UserInfoResponse(
+                        username = username,
+                        role = role,
+                        host = host,
+                        port = port,
+                        dbType = dbType.name
                     ))
                 } catch (e: Exception) {
-                    call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Invalid token"))
+                    call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse("Invalid token"))
                 }
             }
 
@@ -140,7 +140,7 @@ fun Route.authRoutes() {
 
                     // Check if session is still valid
                     if (!SessionConnectionManager.hasSession(sessionId)) {
-                        call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Session expired"))
+                        call.respond(HttpStatusCode.Unauthorized, ApiErrorResponse("Session expired"))
                         return@get
                     }
 
@@ -150,7 +150,7 @@ fun Route.authRoutes() {
                     AuditLogger.log("PASSWORD_EXPIRY_ERROR", "Failed for user: ${e.message}")
                     call.respond(
                         HttpStatusCode.InternalServerError,
-                        mapOf("error" to "Failed to get password expiry info: ${e.message?.take(100)}")
+                        ApiErrorResponse("Failed to get password expiry info: ${e.message?.take(100)}")
                     )
                 }
             }

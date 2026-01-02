@@ -101,6 +101,35 @@ class AccountService {
 
             // Set password expiration
             if (request.expireDays > 0) {
+                // For Oracle, we need to create a profile first if it doesn't exist
+                if (dialect is OracleDialect) {
+                    val profileName = dialect.getProfileName(request.expireDays)
+                    // Check if profile exists
+                    val profileExists = conn.prepareStatement(dialect.getCheckProfileExistsSql()).use { stmt ->
+                        stmt.setString(1, profileName)
+                        stmt.executeQuery().use { rs ->
+                            rs.next() && rs.getInt(1) > 0
+                        }
+                    }
+                    // Create profile if it doesn't exist
+                    if (!profileExists) {
+                        try {
+                            conn.createStatement().use { stmt ->
+                                stmt.execute(dialect.getCreateProfileSql(request.expireDays))
+                            }
+                            AuditLogger.log("CREATE_PROFILE", "Created Oracle profile $profileName")
+                        } catch (e: SQLException) {
+                            // ORA-02379: profile already exists (race condition)
+                            if (e.errorCode != 2379) {
+                                AuditLogger.log(
+                                    "CREATE_ACCOUNT_WARNING",
+                                    "User ${request.username} created but profile $profileName could not be created: ${e.message}"
+                                )
+                            }
+                        }
+                    }
+                }
+
                 val alterSql = dialect.getAlterUserPasswordExpireSql(request.username, request.host, request.expireDays)
                 try {
                     conn.createStatement().use { stmt ->
@@ -108,11 +137,12 @@ class AccountService {
                     }
                 } catch (e: SQLException) {
                     // ORA-65048: In Oracle PDB, profile management may not work for local users
+                    // ORA-02380: profile does not exist
                     // The user is already created, so just log this as a warning and continue
-                    if (e.errorCode == 65048 && dialect is OracleDialect) {
+                    if ((e.errorCode == 65048 || e.errorCode == 2380) && dialect is OracleDialect) {
                         AuditLogger.log(
                             "CREATE_ACCOUNT_WARNING",
-                            "User ${request.username} created but password expiry could not be set in PDB"
+                            "User ${request.username} created but password expiry could not be set: ${e.message}"
                         )
                         // Continue - user was created successfully
                     } else {
@@ -222,6 +252,30 @@ class AccountService {
         if (e.errorCode == 1918) {
             throw SQLException(
                 "User '$username' does not exist.",
+                e.sqlState,
+                e.errorCode
+            )
+        }
+        // ORA-28014: cannot drop administrative users or roles
+        // This can occur if:
+        // 1. The user is an Oracle-maintained/protected user
+        // 2. Oracle Database Vault is enabled
+        // 3. The user has been granted protected roles (DBA, SYSDBA, etc.)
+        if (e.errorCode == 28014) {
+            throw SQLException(
+                "Cannot $operation user '$username'. " +
+                "This error (ORA-28014) typically occurs when Oracle Database Vault is enabled, " +
+                "or the user has administrative privileges. " +
+                "Check: SELECT * FROM DBA_DV_STATUS; and SELECT * FROM DBA_ROLE_PRIVS WHERE GRANTEE = '${username.uppercase()}';",
+                e.sqlState,
+                e.errorCode
+            )
+        }
+        // ORA-01940: cannot drop a user that is currently connected
+        if (e.errorCode == 1940) {
+            throw SQLException(
+                "Cannot $operation user '$username' because the user is currently connected. " +
+                "Please disconnect all sessions for this user first.",
                 e.sqlState,
                 e.errorCode
             )

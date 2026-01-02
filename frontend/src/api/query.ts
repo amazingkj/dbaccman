@@ -24,10 +24,21 @@ export interface AuditLogEntry {
   details?: string
 }
 
+export interface SchemaInfo {
+  currentSchema: string
+  availableSchemas: string[]
+}
+
 export const queryApi = {
   execute: (query: string, account?: string) =>
     apiClient.post<QueryResult>('/query/execute', { query, account }),
 
   getAuditLogs: (params?: { limit?: number; action?: string; user?: string }) =>
     apiClient.get<AuditLogEntry[]>('/query/audit-logs', { params }),
+
+  getSchemas: () =>
+    apiClient.get<SchemaInfo>('/query/schemas'),
+
+  switchSchema: (schema: string) =>
+    apiClient.post<{ success: boolean; schema: string }>('/query/switch-schema', { schema }),
 }

@@ -7,10 +7,9 @@ import {
   MonitorOutlined,
   TableOutlined,
   HddOutlined,
-  LogoutOutlined,
   CodeOutlined,
 } from '@ant-design/icons'
-import { useAuth } from '../../hooks/useAuth'
+import { useAuthStore } from '../../store/authStore'
 
 const { Sider } = Layout
 
@@ -22,11 +21,11 @@ interface SidebarProps {
 function Sidebar({ collapsed, onCollapse }: SidebarProps) {
   const location = useLocation()
   const navigate = useNavigate()
-  const { logout, user } = useAuth()
+  const { user } = useAuthStore()
 
   const isAdmin = user?.role === 'admin'
 
-  // Admin sees all menu items, regular users only see Dashboard and Logout
+  // Admin sees all menu items, regular users only see Dashboard
   const menuItems = isAdmin
     ? [
         {
@@ -37,41 +36,32 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
         {
           key: '/accounts',
           icon: <UserOutlined />,
-          label: 'Account Management',
+          label: 'Accounts',
         },
         {
           key: '/permissions',
           icon: <KeyOutlined />,
-          label: 'Permission Management',
+          label: 'Permissions',
         },
         {
           key: '/sessions',
           icon: <MonitorOutlined />,
-          label: 'Session Monitoring',
+          label: 'Sessions',
         },
         {
           key: '/tables',
           icon: <TableOutlined />,
-          label: 'Table Management',
+          label: 'Tables',
         },
         {
           key: '/tablespaces',
           icon: <HddOutlined />,
-          label: 'Tablespace Management',
+          label: 'Tablespaces',
         },
         {
           key: '/sql-console',
           icon: <CodeOutlined />,
           label: 'SQL Console',
-        },
-        {
-          type: 'divider' as const,
-        },
-        {
-          key: 'logout',
-          icon: <LogoutOutlined />,
-          label: 'Disconnect',
-          danger: true,
         },
       ]
     : [
@@ -80,24 +70,7 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           icon: <DashboardOutlined />,
           label: 'My Account',
         },
-        {
-          type: 'divider' as const,
-        },
-        {
-          key: 'logout',
-          icon: <LogoutOutlined />,
-          label: 'Disconnect',
-          danger: true,
-        },
       ]
-
-  const handleMenuClick = (key: string) => {
-    if (key === 'logout') {
-      logout()
-    } else {
-      navigate(key)
-    }
-  }
 
   return (
     <Sider
@@ -117,16 +90,18 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           justifyContent: 'center',
           color: '#fff',
           fontWeight: 'bold',
+          cursor: 'pointer',
         }}
+        onClick={() => navigate('/dashboard')}
       >
-        {collapsed ? 'DB' : 'DBAccMan'}
+        {collapsed ? 'DB' : 'D-BAM'}
       </div>
       <Menu
         theme="dark"
         mode="inline"
         selectedKeys={[location.pathname]}
         items={menuItems}
-        onClick={({ key }) => handleMenuClick(key)}
+        onClick={({ key }) => navigate(key)}
       />
     </Sider>
   )

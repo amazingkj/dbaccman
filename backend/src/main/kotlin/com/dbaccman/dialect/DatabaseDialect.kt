@@ -100,6 +100,12 @@ interface DatabaseDialect {
 
     fun getDropIndexSql(database: String, table: String, indexName: String): String
 
+    /**
+     * Returns SQL for SELECT * FROM table with LIMIT.
+     * Different databases have different LIMIT syntax.
+     */
+    fun getSelectWithLimitSql(quotedTable: String, limit: Int): String
+
     // ==================== Tablespace Queries ====================
 
     fun getTablespacesQuery(): String
@@ -139,4 +145,15 @@ interface DatabaseDialect {
      * This allows running queries in the context of a different user's schema.
      */
     fun getSwitchSchemaSql(schema: String): String?
+
+    /**
+     * Returns SQL to get the current schema name.
+     */
+    fun getCurrentSchemaQuery(): String
+
+    /**
+     * Returns SQL to get all available schemas that the user can access.
+     * This is different from getDatabasesQuery which may return tablespaces for Oracle.
+     */
+    fun getAvailableSchemasQuery(): String
 }

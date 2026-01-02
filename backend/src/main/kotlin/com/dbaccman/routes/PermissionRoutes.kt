@@ -37,7 +37,7 @@ fun Route.permissionRoutes() {
                     val sessionId = call.getSessionId()
                     val request = call.receive<GrantPermissionRequest>()
                     permissionService.grantPermission(sessionId, request)
-                    call.respond(mapOf("message" to "Permissions granted successfully"))
+                    call.respond(MessageResponse("Permissions granted successfully"))
                 }
             }
 
@@ -46,16 +46,16 @@ fun Route.permissionRoutes() {
                     val sessionId = call.getSessionId()
                     val request = call.receive<RevokePermissionRequest>()
                     permissionService.revokePermission(sessionId, request)
-                    call.respond(mapOf("message" to "Permissions revoked successfully"))
+                    call.respond(MessageResponse("Permissions revoked successfully"))
                 }
             }
 
             get("/available") {
-                call.respond(mapOf(
-                    "all" to MySQLPrivileges.ALL,
-                    "readOnly" to MySQLPrivileges.READ_ONLY,
-                    "readWrite" to MySQLPrivileges.READ_WRITE,
-                    "ddl" to MySQLPrivileges.DDL
+                call.respond(AvailablePrivilegesResponse(
+                    all = MySQLPrivileges.ALL,
+                    readOnly = MySQLPrivileges.READ_ONLY,
+                    readWrite = MySQLPrivileges.READ_WRITE,
+                    ddl = MySQLPrivileges.DDL
                 ))
             }
 

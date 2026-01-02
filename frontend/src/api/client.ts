@@ -1,4 +1,5 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
+import { message } from 'antd'
 import { useAuthStore } from '../store/authStore'
 
 const apiClient = axios.create({
@@ -7,6 +8,9 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 })
+
+// Track if session expired - prevent multiple redirects
+let sessionExpiredHandled = false
 
 // Request interceptor - Add JWT token
 apiClient.interceptors.request.use(
@@ -31,14 +35,21 @@ apiClient.interceptors.response.use(
       const isLoginPage = window.location.pathname === '/login'
       const isLoginRequest = error.config?.url?.includes('/auth/login')
 
-      if (!isLoginPage && !isLoginRequest) {
-        // Session expired - redirect to login
+      if (!isLoginPage && !isLoginRequest && !sessionExpiredHandled) {
+        sessionExpiredHandled = true
+        // Clear auth and redirect immediately
         localStorage.removeItem('auth-storage')
+        message.warning('Session expired. Please log in again.')
         window.location.href = '/login'
       }
     }
     return Promise.reject(error)
   }
 )
+
+// Reset session expired flag (called on successful login)
+export const resetSessionExpiredFlag = () => {
+  sessionExpiredHandled = false
+}
 
 export default apiClient
