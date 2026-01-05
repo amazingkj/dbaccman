@@ -87,6 +87,79 @@ export interface SetTablespaceRequest {
   quota?: string  // e.g., "UNLIMITED", "100M", "1G"
 }
 
+// Clone Account
+export interface CloneAccountRequest {
+  sourceUsername: string
+  sourceHost: string
+  newUsername: string
+  newHost: string
+  newPassword: string
+  copyPermissions: boolean
+  expireDays: number
+}
+
+// Batch Operations
+export interface BatchCreateAccountRequest {
+  accounts: CreateAccountRequest[]
+}
+
+export interface BatchDeleteRequest {
+  accounts: AccountIdentifier[]
+}
+
+export interface BatchUnlockRequest {
+  accounts: AccountIdentifier[]
+}
+
+export interface AccountIdentifier {
+  username: string
+  host: string
+}
+
+export interface BatchOperationResult {
+  success: string[]
+  failed: BatchOperationError[]
+}
+
+export interface BatchOperationError {
+  account: string
+  error: string
+}
+
+// Role Management (Oracle)
+export interface Role {
+  name: string
+  isDefault: boolean
+  isAdmin: boolean
+}
+
+export interface UserRole {
+  username: string
+  roleName: string
+  isDefault: boolean
+  isAdmin: boolean
+}
+
+export interface GrantRoleRequest {
+  username: string
+  host: string
+  roles: string[]
+  withAdminOption: boolean
+}
+
+export interface RevokeRoleRequest {
+  username: string
+  host: string
+  roles: string[]
+}
+
+// PDB Management (Oracle)
+export interface PdbInfo {
+  name: string
+  openMode: string
+  restricted: boolean
+}
+
 // Permission Types
 export interface Permission {
   grantee: string
@@ -173,6 +246,26 @@ export interface TableLocationRequest {
   database: string
   tableName: string
   tablespaceName: string
+}
+
+// Pagination Types
+export interface PaginationInfo {
+  page: number
+  pageSize: number
+  totalItems: number
+  totalPages: number
+}
+
+export interface AccountStats {
+  totalAccounts: number
+  lockedAccounts: number
+  activeAccounts: number
+}
+
+export interface PaginatedAccountsResponse {
+  data: Account[]
+  pagination: PaginationInfo
+  stats: AccountStats
 }
 
 // API Response Types

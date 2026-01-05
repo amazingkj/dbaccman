@@ -75,6 +75,7 @@ class TableRoutesTest {
         val dbInfo = DatabaseInfo(
             name = "production",
             tableCount = 50,
+            totalRows = 100000L,
             size = 1073741824L  // 1GB
         )
 

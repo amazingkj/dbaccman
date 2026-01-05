@@ -1,17 +1,103 @@
 package com.dbaccman.service
 
+import com.dbaccman.config.SessionConnectionManager
+import com.dbaccman.config.useOracleScriptContext
 import com.dbaccman.config.useSessionConnectionWithDialect
+import com.dbaccman.dialect.MySQLDialect
 import com.dbaccman.dialect.OracleDialect
-import com.dbaccman.model.Account
-import com.dbaccman.model.CreateAccountRequest
-import com.dbaccman.model.ExpiringAccount
+import com.dbaccman.model.*
 import com.dbaccman.util.AuditLogger
+import org.slf4j.LoggerFactory
 import java.sql.ResultSet
 import java.sql.SQLException
 
 class AccountService {
+    private val logger = LoggerFactory.getLogger(AccountService::class.java)
+
+    fun getAccountCount(sessionId: String): Int {
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getAccountCountQuery()
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery(sql).use { rs ->
+                    if (rs.next()) rs.getInt("count") else 0
+                }
+            }
+        }
+    }
+
+    /**
+     * Get paginated accounts with stats.
+     */
+    fun getPaginatedAccounts(sessionId: String, page: Int, pageSize: Int): PaginatedAccountsResponse {
+        val isContainerRoot = SessionConnectionManager.isContainerRoot(sessionId)
+
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            // 1. Get total count
+            val totalCount = conn.createStatement().use { stmt ->
+                stmt.executeQuery(dialect.getAccountCountQuery()).use { rs ->
+                    if (rs.next()) rs.getInt("count") else 0
+                }
+            }
+
+            // 2. Get paginated data
+            val offset = (page - 1) * pageSize
+            val sql = dialect.getPaginatedAccountsQuery()
+
+            val accounts = conn.prepareStatement(sql).use { stmt ->
+                // Oracle uses OFFSET first, then FETCH (limit)
+                // MySQL/PostgreSQL use LIMIT first, then OFFSET
+                if (dialect is OracleDialect) {
+                    stmt.setInt(1, offset)
+                    stmt.setInt(2, pageSize)
+                } else {
+                    stmt.setInt(1, pageSize)
+                    stmt.setInt(2, offset)
+                }
+
+                stmt.executeQuery().use { rs ->
+                    val result = mutableListOf<Account>()
+                    while (rs.next()) {
+                        val account = mapResultSetToAccount(rs)
+                        // Strip C## prefix for display in CDB root
+                        if (isContainerRoot && dialect is OracleDialect) {
+                            result.add(account.copy(
+                                username = dialect.stripCdbPrefix(account.username)
+                            ))
+                        } else {
+                            result.add(account)
+                        }
+                    }
+                    result
+                }
+            }
+
+            // 3. Get locked count for stats (from the full dataset)
+            val lockedCount = conn.createStatement().use { stmt ->
+                val lockedSql = when (dialect) {
+                    is OracleDialect -> "SELECT COUNT(*) FROM DBA_USERS WHERE ACCOUNT_STATUS LIKE '%LOCKED%' AND USERNAME NOT IN (${dialect.getSystemUsers().joinToString { "'$it'" }})"
+                    is MySQLDialect -> "SELECT COUNT(*) FROM mysql.user WHERE account_locked = 'Y' AND user NOT IN (${dialect.getSystemUsers().joinToString { "'$it'" }})"
+                    else -> "SELECT COUNT(*) FROM pg_roles WHERE rolcanlogin = false AND rolname NOT IN (${dialect.getSystemUsers().joinToString { "'$it'" }})"
+                }
+                stmt.executeQuery(lockedSql).use { rs ->
+                    if (rs.next()) rs.getInt(1) else 0
+                }
+            }
+
+            PaginatedAccountsResponse(
+                data = accounts,
+                pagination = PaginationInfo.of(page, pageSize, totalCount),
+                stats = AccountStats(
+                    totalAccounts = totalCount,
+                    lockedAccounts = lockedCount,
+                    activeAccounts = totalCount - lockedCount
+                )
+            )
+        }
+    }
 
     fun getAllAccounts(sessionId: String): List<Account> {
+        val isContainerRoot = SessionConnectionManager.isContainerRoot(sessionId)
+
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getAllAccountsQuery()
 
@@ -19,7 +105,15 @@ class AccountService {
                 stmt.executeQuery(sql).use { rs ->
                     val accounts = mutableListOf<Account>()
                     while (rs.next()) {
-                        accounts.add(mapResultSetToAccount(rs))
+                        val account = mapResultSetToAccount(rs)
+                        // Strip C## prefix for display in CDB root
+                        if (isContainerRoot && dialect is OracleDialect) {
+                            accounts.add(account.copy(
+                                username = dialect.stripCdbPrefix(account.username)
+                            ))
+                        } else {
+                            accounts.add(account)
+                        }
                     }
                     accounts
                 }
@@ -28,18 +122,65 @@ class AccountService {
     }
 
     fun createAccount(sessionId: String, request: CreateAccountRequest): Account {
-        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            // Create user - DDL statement, use createStatement (no prepared statement for DDL)
+        return useOracleScriptContext(sessionId) { conn, dialect ->
             val createSql = dialect.getCreateUserSql(request.username, request.host, request.password)
+            logger.info("Creating user with SQL: $createSql")
 
             try {
+                // 1. Create user
                 conn.createStatement().use { stmt ->
                     stmt.execute(createSql)
                 }
+
+                // 2. Set password expiration
+                if (request.expireDays > 0) {
+                    if (dialect is OracleDialect) {
+                        // Oracle uses profiles for password expiry
+                        val profileName = dialect.getProfileName(request.expireDays)
+
+                        // Check if profile exists
+                        val profileExists = conn.prepareStatement(dialect.getCheckProfileExistsSql()).use { stmt ->
+                            stmt.setString(1, profileName)
+                            stmt.executeQuery().use { rs ->
+                                rs.next() && rs.getInt(1) > 0
+                            }
+                        }
+
+                        // Create profile if it doesn't exist
+                        if (!profileExists) {
+                            try {
+                                conn.createStatement().use { stmt ->
+                                    stmt.execute(dialect.getCreateProfileSql(request.expireDays, false))
+                                }
+                                logger.info("Created Oracle profile $profileName")
+                            } catch (e: SQLException) {
+                                if (e.errorCode != 2379) { // ORA-02379: profile already exists
+                                    logger.warn("Could not create profile $profileName: ${e.message}")
+                                }
+                            }
+                        }
+
+                        // Assign profile to user
+                        try {
+                            val alterSql = dialect.getAlterUserPasswordExpireSql(request.username, request.host, request.expireDays)
+                            logger.info("Assigning profile with SQL: $alterSql")
+                            conn.createStatement().use { stmt ->
+                                stmt.execute(alterSql)
+                            }
+                        } catch (e: SQLException) {
+                            logger.warn("Could not assign profile to user ${request.username}: ${e.message}")
+                        }
+                    } else {
+                        // Non-Oracle: set password expiry directly
+                        val alterSql = dialect.getAlterUserPasswordExpireSql(request.username, request.host, request.expireDays)
+                        conn.createStatement().use { stmt ->
+                            stmt.execute(alterSql)
+                        }
+                    }
+                }
             } catch (e: SQLException) {
-                // ORA-01920: User name conflicts with another user or role name (user already exists)
-                // MySQL error 1396: Operation CREATE USER failed (user already exists)
-                // PostgreSQL SQLSTATE 42710: duplicate_object (role already exists)
+                logger.error("Failed to create user. SQL: $createSql, Error: ${e.message}, ErrorCode: ${e.errorCode}")
+
                 val isUserExists = e.errorCode == 1920 || e.errorCode == 1396 || e.sqlState == "42710"
                 if (isUserExists) {
                     throw SQLException(
@@ -48,107 +189,14 @@ class AccountService {
                         e.errorCode
                     )
                 }
-                // ORA-65048: error processing DDL in PDB - user might already exist as common user
-                if (e.errorCode == 65048 && dialect is OracleDialect) {
+                if (e.errorCode == 65048) {
                     throw SQLException(
-                        "Cannot create user '${request.username}' in this PDB. " +
-                        "A common user with the same name may already exist in CDB\$ROOT. " +
-                        "Please use a different username or connect to CDB\$ROOT to manage common users.",
+                        "Cannot create user '${request.username}' (ORA-65048). Original error: ${e.message}",
                         e.sqlState,
                         e.errorCode
                     )
                 }
-                // ORA-65096: Common user/role name is invalid - happens in Oracle CDB root
-                if (e.errorCode == 65096 && dialect is OracleDialect) {
-                    // Check if we're in CDB$ROOT (not a PDB)
-                    val containerName = conn.createStatement().use { stmt ->
-                        stmt.executeQuery(dialect.getContainerNameSql()).use { rs ->
-                            if (rs.next()) rs.getString(1) else null
-                        }
-                    }
-
-                    // Only use _ORACLE_SCRIPT workaround in CDB$ROOT, not in PDBs
-                    if (containerName == "CDB\$ROOT") {
-                        conn.createStatement().use { stmt ->
-                            stmt.execute(dialect.getEnableLocalUserSql())
-                        }
-                        try {
-                            conn.createStatement().use { stmt ->
-                                stmt.execute(createSql)
-                            }
-                        } finally {
-                            try {
-                                conn.createStatement().use { stmt ->
-                                    stmt.execute(dialect.getDisableLocalUserSql())
-                                }
-                            } catch (_: Exception) {
-                                // Ignore cleanup errors
-                            }
-                        }
-                    } else {
-                        // In PDB, ORA-65096 shouldn't happen - rethrow with helpful message
-                        throw SQLException(
-                            "Cannot create user '${request.username}' in PDB '$containerName'. " +
-                            "In a PDB, user names should not start with 'C##'. Original error: ${e.message}",
-                            e.sqlState,
-                            e.errorCode
-                        )
-                    }
-                } else {
-                    throw e
-                }
-            }
-
-            // Set password expiration
-            if (request.expireDays > 0) {
-                // For Oracle, we need to create a profile first if it doesn't exist
-                if (dialect is OracleDialect) {
-                    val profileName = dialect.getProfileName(request.expireDays)
-                    // Check if profile exists
-                    val profileExists = conn.prepareStatement(dialect.getCheckProfileExistsSql()).use { stmt ->
-                        stmt.setString(1, profileName)
-                        stmt.executeQuery().use { rs ->
-                            rs.next() && rs.getInt(1) > 0
-                        }
-                    }
-                    // Create profile if it doesn't exist
-                    if (!profileExists) {
-                        try {
-                            conn.createStatement().use { stmt ->
-                                stmt.execute(dialect.getCreateProfileSql(request.expireDays))
-                            }
-                            AuditLogger.log("CREATE_PROFILE", "Created Oracle profile $profileName")
-                        } catch (e: SQLException) {
-                            // ORA-02379: profile already exists (race condition)
-                            if (e.errorCode != 2379) {
-                                AuditLogger.log(
-                                    "CREATE_ACCOUNT_WARNING",
-                                    "User ${request.username} created but profile $profileName could not be created: ${e.message}"
-                                )
-                            }
-                        }
-                    }
-                }
-
-                val alterSql = dialect.getAlterUserPasswordExpireSql(request.username, request.host, request.expireDays)
-                try {
-                    conn.createStatement().use { stmt ->
-                        stmt.execute(alterSql)
-                    }
-                } catch (e: SQLException) {
-                    // ORA-65048: In Oracle PDB, profile management may not work for local users
-                    // ORA-02380: profile does not exist
-                    // The user is already created, so just log this as a warning and continue
-                    if ((e.errorCode == 65048 || e.errorCode == 2380) && dialect is OracleDialect) {
-                        AuditLogger.log(
-                            "CREATE_ACCOUNT_WARNING",
-                            "User ${request.username} created but password expiry could not be set: ${e.message}"
-                        )
-                        // Continue - user was created successfully
-                    } else {
-                        throw e
-                    }
-                }
+                throw e
             }
 
             // Flush privileges if required
@@ -167,26 +215,21 @@ class AccountService {
     }
 
     fun changePassword(sessionId: String, username: String, host: String, newPassword: String, expireImmediately: Boolean = false) {
-        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            // DDL statement - use createStatement
-            val sql = dialect.getAlterUserPasswordSql(username, host, newPassword)
+        useOracleScriptContext(sessionId) { conn, dialect ->
             try {
+                val sql = dialect.getAlterUserPasswordSql(username, host, newPassword)
                 conn.createStatement().use { stmt ->
                     stmt.execute(sql)
                 }
-            } catch (e: SQLException) {
-                handleOracleUserModifyError(e, username, "change password for")
-            }
 
-            if (expireImmediately) {
-                val expireSql = dialect.getExpirePasswordSql(username, host)
-                try {
+                if (expireImmediately) {
+                    val expireSql = dialect.getExpirePasswordSql(username, host)
                     conn.createStatement().use { stmt ->
                         stmt.execute(expireSql)
                     }
-                } catch (e: SQLException) {
-                    handleOracleUserModifyError(e, username, "expire password for")
                 }
+            } catch (e: SQLException) {
+                handleOracleUserModifyError(e, username, "change password for")
             }
 
             dialect.getFlushPrivilegesSql()?.let { flushSql ->
@@ -198,10 +241,9 @@ class AccountService {
     }
 
     fun deleteAccount(sessionId: String, username: String, host: String) {
-        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            // DDL statement - use createStatement
-            val sql = dialect.getDropUserSql(username, host)
+        useOracleScriptContext(sessionId) { conn, dialect ->
             try {
+                val sql = dialect.getDropUserSql(username, host)
                 conn.createStatement().use { stmt ->
                     stmt.execute(sql)
                 }
@@ -218,10 +260,9 @@ class AccountService {
     }
 
     fun unlockAccount(sessionId: String, username: String, host: String) {
-        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            // DDL statement - use createStatement
-            val sql = dialect.getUnlockAccountSql(username, host)
+        useOracleScriptContext(sessionId) { conn, dialect ->
             try {
+                val sql = dialect.getUnlockAccountSql(username, host)
                 conn.createStatement().use { stmt ->
                     stmt.execute(sql)
                 }
@@ -249,7 +290,12 @@ class AccountService {
             )
         }
         // ORA-01918: user does not exist
+        // For delete operations, this is acceptable (idempotent delete)
         if (e.errorCode == 1918) {
+            if (operation == "delete") {
+                // User already doesn't exist - treat as successful delete
+                return
+            }
             throw SQLException(
                 "User '$username' does not exist.",
                 e.sqlState,
@@ -383,5 +429,174 @@ class AccountService {
             passwordLifetime = rs.getObject("password_lifetime")?.let { (it as Number).toInt() }?.takeIf { it > 0 },
             accountLocked = rs.getBoolean("account_locked")
         )
+    }
+
+    // ==================== Clone Account ====================
+
+    fun cloneAccount(sessionId: String, request: CloneAccountRequest): Account {
+        val permissionService = PermissionService()
+
+        // Get source user's permissions
+        val sourcePermissions = if (request.copyPermissions) {
+            permissionService.getUserPermissions(sessionId, request.sourceUsername, request.sourceHost)
+        } else {
+            emptyList()
+        }
+
+        // Create new account
+        val createRequest = CreateAccountRequest(
+            username = request.newUsername,
+            host = request.newHost,
+            password = request.newPassword,
+            expireDays = request.expireDays
+        )
+        val newAccount = createAccount(sessionId, createRequest)
+
+        // Copy permissions using batch operation for efficiency
+        if (request.copyPermissions && sourcePermissions.isNotEmpty()) {
+            // Group permissions by database.table and create batch requests
+            val permissionsByTarget = sourcePermissions.groupBy { "${it.database}.${it.table}" }
+
+            val grantRequests = permissionsByTarget.map { (_, perms) ->
+                val firstPerm = perms.first()
+                val privileges = perms.map { it.privilege }
+                GrantPermissionRequest(
+                    username = request.newUsername,
+                    host = request.newHost,
+                    database = firstPerm.database,
+                    table = firstPerm.table,
+                    privileges = privileges
+                )
+            }
+
+            // Execute all grants in a single batch (one connection, one flush)
+            val (successCount, errors) = permissionService.batchGrantPermissions(sessionId, grantRequests)
+
+            // Log any errors that occurred
+            errors.forEach { error ->
+                AuditLogger.log("CLONE_ACCOUNT_WARNING", "Could not copy permission: $error")
+            }
+
+            logger.info("Cloned permissions: $successCount succeeded, ${errors.size} failed")
+        }
+
+        AuditLogger.log(
+            "CLONE_ACCOUNT",
+            "Cloned account ${request.sourceUsername}@${request.sourceHost} to ${request.newUsername}@${request.newHost}" +
+            if (request.copyPermissions) " with ${sourcePermissions.size} permissions" else ""
+        )
+
+        return newAccount
+    }
+
+    // ==================== Batch Operations ====================
+
+    fun batchCreateAccounts(sessionId: String, request: BatchCreateAccountRequest): BatchOperationResult {
+        val success = mutableListOf<String>()
+        val failed = mutableListOf<BatchOperationError>()
+
+        request.accounts.forEach { accountRequest ->
+            val accountId = "${accountRequest.username}@${accountRequest.host}"
+            try {
+                createAccount(sessionId, accountRequest)
+                success.add(accountId)
+            } catch (e: Exception) {
+                failed.add(BatchOperationError(accountId, e.message ?: "Unknown error"))
+            }
+        }
+
+        AuditLogger.log(
+            "BATCH_CREATE_ACCOUNTS",
+            "Created ${success.size} accounts, ${failed.size} failed"
+        )
+
+        return BatchOperationResult(success, failed)
+    }
+
+    fun batchDeleteAccounts(sessionId: String, request: BatchDeleteRequest): BatchOperationResult {
+        val success = mutableListOf<String>()
+        val failed = mutableListOf<BatchOperationError>()
+
+        request.accounts.forEach { account ->
+            val accountId = "${account.username}@${account.host}"
+            try {
+                deleteAccount(sessionId, account.username, account.host)
+                success.add(accountId)
+            } catch (e: Exception) {
+                failed.add(BatchOperationError(accountId, e.message ?: "Unknown error"))
+            }
+        }
+
+        AuditLogger.log(
+            "BATCH_DELETE_ACCOUNTS",
+            "Deleted ${success.size} accounts, ${failed.size} failed"
+        )
+
+        return BatchOperationResult(success, failed)
+    }
+
+    fun batchUnlockAccounts(sessionId: String, request: BatchUnlockRequest): BatchOperationResult {
+        val success = mutableListOf<String>()
+        val failed = mutableListOf<BatchOperationError>()
+
+        request.accounts.forEach { account ->
+            val accountId = "${account.username}@${account.host}"
+            try {
+                unlockAccount(sessionId, account.username, account.host)
+                success.add(accountId)
+            } catch (e: Exception) {
+                failed.add(BatchOperationError(accountId, e.message ?: "Unknown error"))
+            }
+        }
+
+        AuditLogger.log(
+            "BATCH_UNLOCK_ACCOUNTS",
+            "Unlocked ${success.size} accounts, ${failed.size} failed"
+        )
+
+        return BatchOperationResult(success, failed)
+    }
+
+    // ==================== Export ====================
+
+    fun exportAccountsToCsv(sessionId: String, includePermissions: Boolean = false): String {
+        val accounts = getAllAccounts(sessionId)
+        val permissionService = PermissionService()
+
+        val sb = StringBuilder()
+
+        if (includePermissions) {
+            sb.appendLine("username,host,password_last_changed,password_lifetime,account_locked,database,table,privilege")
+            accounts.forEach { account ->
+                val permissions = try {
+                    permissionService.getUserPermissions(sessionId, account.username, account.host)
+                } catch (e: Exception) {
+                    emptyList()
+                }
+
+                if (permissions.isEmpty()) {
+                    sb.appendLine("${escapeCsv(account.username)},${escapeCsv(account.host)},${escapeCsv(account.passwordLastChanged ?: "")},${account.passwordLifetime ?: ""},${account.accountLocked},,,")
+                } else {
+                    permissions.forEach { perm ->
+                        sb.appendLine("${escapeCsv(account.username)},${escapeCsv(account.host)},${escapeCsv(account.passwordLastChanged ?: "")},${account.passwordLifetime ?: ""},${account.accountLocked},${escapeCsv(perm.database)},${escapeCsv(perm.table)},${escapeCsv(perm.privilege)}")
+                    }
+                }
+            }
+        } else {
+            sb.appendLine("username,host,password_last_changed,password_lifetime,account_locked")
+            accounts.forEach { account ->
+                sb.appendLine("${escapeCsv(account.username)},${escapeCsv(account.host)},${escapeCsv(account.passwordLastChanged ?: "")},${account.passwordLifetime ?: ""},${account.accountLocked}")
+            }
+        }
+
+        return sb.toString()
+    }
+
+    private fun escapeCsv(value: String): String {
+        return if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
+            "\"${value.replace("\"", "\"\"")}\""
+        } else {
+            value
+        }
     }
 }

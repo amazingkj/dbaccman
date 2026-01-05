@@ -91,6 +91,26 @@ class PostgreSQLDialect : DatabaseDialect {
         ORDER BY usename
     """.trimIndent()
 
+    override fun getAccountCountQuery(): String = """
+        SELECT COUNT(*) as count
+        FROM pg_user
+        WHERE usename NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+    """.trimIndent()
+
+    override fun getPaginatedAccountsQuery(): String = """
+        SELECT
+            usename as username,
+            'localhost' as host,
+            COALESCE(TO_CHAR(valuntil, 'YYYY-MM-DD HH24:MI:SS'), '') as password_last_changed,
+            0 as password_lifetime,
+            CASE WHEN rolcanlogin = false THEN 1 ELSE 0 END as account_locked
+        FROM pg_user
+        JOIN pg_roles ON pg_user.usename = pg_roles.rolname
+        WHERE usename NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        ORDER BY usename
+        LIMIT ? OFFSET ?
+    """.trimIndent()
+
     override fun getCreateUserSql(username: String, host: String, password: String): String {
         // PostgreSQL DDL with quoted identifier and escaped password
         return "CREATE USER ${quoteIdentifier(username)} WITH PASSWORD '${escapePassword(password)}'"

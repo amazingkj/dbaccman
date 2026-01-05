@@ -64,6 +64,7 @@ fun Application.module() {
             tablespaceRoutes()
             queryRoutes()
             dashboardRoutes()
+            roleRoutes()
         }
 
         get("/health") {

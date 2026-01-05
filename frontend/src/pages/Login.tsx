@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { Form, Input, Button, Card, Typography, Space, Select, InputNumber, Divider, Alert } from 'antd'
+import { Form, Input, Button, Card, Typography, Space, Select, InputNumber, Divider, Alert, Row, Col } from 'antd'
 import { UserOutlined, LockOutlined, DatabaseOutlined, GlobalOutlined, DeleteOutlined, NumberOutlined } from '@ant-design/icons'
 import { AxiosError } from 'axios'
 import { useAuth } from '../hooks/useAuth'
@@ -135,37 +135,66 @@ function Login() {
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
-        background: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 100%)',
+        background: 'linear-gradient(135deg, #eef2f6 0%, #e3e9f0 100%)',
       }}
     >
       <style>
         {`
-          @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
-
           .login-card {
-            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
           }
 
           .login-card .ant-form-item {
-            margin-bottom: 12px;
+            margin-bottom: 16px;
+          }
+
+          .login-card .ant-form-item-label > label {
+            font-size: 13px;
+            color: #5a6a85;
+          }
+
+          .login-card .ant-input,
+          .login-card .ant-input-number,
+          .login-card .ant-select-selector {
+            font-size: 14px;
           }
         `}
       </style>
-      <Card className="login-card" style={{ width: 420, boxShadow: '0 8px 24px rgba(0,0,0,0.3)' }}>
+      <Card
+        className="login-card"
+        style={{
+          width: 480,
+          boxShadow: '0 9px 17.5px rgba(0,0,0,0.05)',
+          borderRadius: 16,
+          border: 'none',
+        }}
+      >
         <Space direction="vertical" size="middle" style={{ width: '100%' }}>
           <div style={{ textAlign: 'center' }}>
-            <DatabaseOutlined style={{ fontSize: 48, color: '#1890ff' }} />
+            <div style={{
+              width: 64,
+              height: 64,
+              borderRadius: 12,
+              background: 'linear-gradient(135deg, #5d87ff 0%, #4570ea 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 16px',
+            }}>
+              <DatabaseOutlined style={{ fontSize: 32, color: '#fff' }} />
+            </div>
             <Title
               level={2}
               style={{
-                margin: '12px 0 4px',
-                fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
-                fontWeight: 800,
+                margin: '0 0 4px',
+                fontFamily: "'Plus Jakarta Sans', sans-serif",
+                fontWeight: 700,
+                color: '#2a3547',
               }}
             >
               D-BAM
             </Title>
-            <Text type="secondary">Database Account Manager</Text>
+            <Text style={{ color: '#5a6a85' }}>Database Account Manager</Text>
           </div>
 
           {loginError && (
@@ -234,7 +263,6 @@ function Login() {
               rules={[{ required: true, message: 'Please select a database type' }]}
             >
               <Select
-                size="large"
                 onChange={handleDbTypeChange}
               >
                 <Select.Option value="MYSQL">
@@ -258,66 +286,71 @@ function Login() {
               </Select>
             </Form.Item>
 
-            <Form.Item
-              name="host"
-              label={<Space><GlobalOutlined /> Database Host</Space>}
-              rules={[{ required: true, message: 'Please enter the host address' }]}
-            >
-              <Input
-                placeholder="localhost or IP address"
-                size="large"
-              />
-            </Form.Item>
-
-            <Form.Item
-              name="port"
-              label={<Space><NumberOutlined /> Port</Space>}
-              rules={[{ required: true, message: 'Please enter the port' }]}
-            >
-              <InputNumber
-                style={{ width: '100%' }}
-                min={1}
-                max={65535}
-                placeholder="3306"
-                size="large"
-              />
-            </Form.Item>
+            <Row gutter={12}>
+              <Col span={16}>
+                <Form.Item
+                  name="host"
+                  label={<Space><GlobalOutlined /> Host</Space>}
+                  rules={[{ required: true, message: 'Please enter host' }]}
+                >
+                  <Input
+                    placeholder="localhost or IP"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item
+                  name="port"
+                  label={<Space><NumberOutlined /> Port</Space>}
+                  rules={[{ required: true, message: 'Required' }]}
+                >
+                  <InputNumber
+                    style={{ width: '100%' }}
+                    min={1}
+                    max={65535}
+                    placeholder="3306"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
 
             <Form.Item
               name="database"
-              label={<Space>{getDatabaseFieldConfig().required ? '' : ' '}<DatabaseOutlined />{getDatabaseFieldConfig().label}</Space>}
+              label={<Space><DatabaseOutlined />{getDatabaseFieldConfig().label}</Space>}
               tooltip={getDatabaseFieldConfig().tooltip}
               rules={getDatabaseFieldConfig().required ? [{ required: true, message: `Please enter the ${getDatabaseFieldConfig().label.toLowerCase()}` }] : []}
             >
               <Input
                 placeholder={getDatabaseFieldConfig().placeholder}
-                size="large"
               />
             </Form.Item>
 
-            <Form.Item
-              name="username"
-              label={<Space><UserOutlined /> Username</Space>}
-              rules={[{ required: true, message: 'Please enter your username' }]}
-            >
-              <Input
-                placeholder="Database username"
-                size="large"
-              />
-            </Form.Item>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item
+                  name="username"
+                  label={<Space><UserOutlined /> Username</Space>}
+                  rules={[{ required: true, message: 'Required' }]}
+                >
+                  <Input
+                    placeholder="Username"
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item
+                  name="password"
+                  label={<Space><LockOutlined /> Password</Space>}
+                  rules={[{ required: true, message: 'Required' }]}
+                >
+                  <Input.Password
+                    placeholder="Password"
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
 
-            <Form.Item
-              name="password"
-              label={<Space><LockOutlined /> Password</Space>}
-              rules={[{ required: true, message: 'Please enter your password' }]}
-            >
-              <Input.Password
-                placeholder="Database password"
-                size="large"
-              />
-            </Form.Item>
-
-            <Form.Item style={{ marginBottom: 0 }}>
+            <Form.Item style={{ marginBottom: 0, marginTop: 8 }}>
               <Button
                 type="primary"
                 htmlType="submit"

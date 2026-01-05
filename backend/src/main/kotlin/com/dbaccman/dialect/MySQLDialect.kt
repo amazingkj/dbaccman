@@ -92,6 +92,25 @@ class MySQLDialect : DatabaseDialect {
         ORDER BY user, host
     """.trimIndent()
 
+    override fun getAccountCountQuery(): String = """
+        SELECT COUNT(*) as count
+        FROM mysql.user
+        WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+    """.trimIndent()
+
+    override fun getPaginatedAccountsQuery(): String = """
+        SELECT
+            user as username,
+            host,
+            IFNULL(DATE_FORMAT(password_last_changed, '%Y-%m-%d %H:%i:%s'), '') as password_last_changed,
+            IFNULL(password_lifetime, 0) as password_lifetime,
+            account_locked = 'Y' as account_locked
+        FROM mysql.user
+        WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        ORDER BY user, host
+        LIMIT ? OFFSET ?
+    """.trimIndent()
+
     override fun getCreateUserSql(username: String, host: String, password: String): String {
         // MySQL DDL with quoted identifiers and escaped password
         return "CREATE USER ${quoteIdentifier(username)}@${quoteIdentifier(host)} IDENTIFIED BY '${escapePassword(password)}'"

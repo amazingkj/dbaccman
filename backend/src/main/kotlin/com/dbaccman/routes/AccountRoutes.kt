@@ -1,8 +1,6 @@
 package com.dbaccman.routes
 
-import com.dbaccman.model.ChangePasswordRequest
-import com.dbaccman.model.CreateAccountRequest
-import com.dbaccman.model.SetTablespaceRequest
+import com.dbaccman.model.*
 import com.dbaccman.service.AccountService
 import com.dbaccman.util.getSessionId
 import com.dbaccman.util.handleAdminRoute
@@ -25,8 +23,26 @@ fun Route.accountRoutes() {
             get {
                 call.handleAdminRoute(logger, "Failed to fetch accounts") {
                     val sessionId = call.getSessionId()
-                    val accounts = accountService.getAllAccounts(sessionId)
-                    call.respond(accounts)
+
+                    // Check for pagination parameters
+                    val page = call.request.queryParameters["page"]?.toIntOrNull()
+                    val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()
+
+                    call.response.header(HttpHeaders.CacheControl, "no-cache, no-store, must-revalidate")
+                    call.response.header(HttpHeaders.Pragma, "no-cache")
+                    call.response.header(HttpHeaders.Expires, "0")
+
+                    if (page != null && pageSize != null) {
+                        // Return paginated response
+                        val validPage = maxOf(1, page)
+                        val validPageSize = pageSize.coerceIn(1, 100)
+                        val result = accountService.getPaginatedAccounts(sessionId, validPage, validPageSize)
+                        call.respond(result)
+                    } else {
+                        // Return all accounts (backward compatibility)
+                        val accounts = accountService.getAllAccounts(sessionId)
+                        call.respond(accounts)
+                    }
                 }
             }
 
@@ -44,6 +60,9 @@ fun Route.accountRoutes() {
                     val sessionId = call.getSessionId()
                     val days = call.request.queryParameters["days"]?.toIntOrNull() ?: 30
                     val accounts = accountService.getExpiringAccounts(sessionId, days)
+                    call.response.header(HttpHeaders.CacheControl, "no-cache, no-store, must-revalidate")
+                    call.response.header(HttpHeaders.Pragma, "no-cache")
+                    call.response.header(HttpHeaders.Expires, "0")
                     call.respond(accounts)
                 }
             }
@@ -94,6 +113,73 @@ fun Route.accountRoutes() {
                         request.quota
                     )
                     call.respond(MessageResponse("Tablespace set successfully"))
+                }
+            }
+
+            // ==================== Clone Account ====================
+
+            post("/clone") {
+                call.handleAdminMutationRoute(logger, "Failed to clone account") {
+                    val sessionId = call.getSessionId()
+                    val request = call.receive<CloneAccountRequest>()
+                    val account = accountService.cloneAccount(sessionId, request)
+                    call.respond(HttpStatusCode.Created, account)
+                }
+            }
+
+            // ==================== Batch Operations ====================
+
+            post("/batch/create") {
+                call.handleAdminMutationRoute(logger, "Failed to batch create accounts") {
+                    val sessionId = call.getSessionId()
+                    val request = call.receive<BatchCreateAccountRequest>()
+                    val result = accountService.batchCreateAccounts(sessionId, request)
+                    call.respond(result)
+                }
+            }
+
+            post("/batch/delete") {
+                call.handleAdminMutationRoute(logger, "Failed to batch delete accounts") {
+                    val sessionId = call.getSessionId()
+                    val request = call.receive<BatchDeleteRequest>()
+                    val result = accountService.batchDeleteAccounts(sessionId, request)
+                    call.respond(result)
+                }
+            }
+
+            post("/batch/unlock") {
+                call.handleAdminMutationRoute(logger, "Failed to batch unlock accounts") {
+                    val sessionId = call.getSessionId()
+                    val request = call.receive<BatchUnlockRequest>()
+                    val result = accountService.batchUnlockAccounts(sessionId, request)
+                    call.respond(result)
+                }
+            }
+
+            // ==================== Export ====================
+
+            get("/export") {
+                call.handleAdminRoute(logger, "Failed to export accounts") {
+                    val sessionId = call.getSessionId()
+                    val includePermissions = call.request.queryParameters["includePermissions"]?.toBoolean() ?: false
+                    val format = call.request.queryParameters["format"] ?: "csv"
+
+                    when (format.lowercase()) {
+                        "csv" -> {
+                            val csv = accountService.exportAccountsToCsv(sessionId, includePermissions)
+                            call.response.header(
+                                HttpHeaders.ContentDisposition,
+                                ContentDisposition.Attachment.withParameter(
+                                    ContentDisposition.Parameters.FileName,
+                                    "accounts.csv"
+                                ).toString()
+                            )
+                            call.respondText(csv, ContentType.Text.CSV)
+                        }
+                        else -> {
+                            call.respond(HttpStatusCode.BadRequest, MessageResponse("Unsupported format: $format"))
+                        }
+                    }
                 }
             }
         }

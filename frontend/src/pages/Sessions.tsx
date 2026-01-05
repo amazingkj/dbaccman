@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Typography,
@@ -11,7 +11,6 @@ import {
   Card,
   Row,
   Col,
-  Statistic,
   Switch,
   Tooltip,
   Modal,
@@ -29,11 +28,99 @@ import {
   EyeOutlined,
   ThunderboltOutlined,
   PauseCircleOutlined,
+  DashboardOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
 import { sessionsApi } from '../api/sessions'
 import type { SessionInfo } from '../types'
 
 const { Title, Text, Paragraph } = Typography
+
+// Modernize-style stat card styles (white background with colored icons)
+const statCardStyles = {
+  total: {
+    color: '#5d87ff',
+    bgColor: 'rgba(93, 135, 255, 0.1)',
+    icon: <DashboardOutlined />,
+  },
+  active: {
+    color: '#49beff',
+    bgColor: 'rgba(73, 190, 255, 0.1)',
+    icon: <ThunderboltOutlined />,
+  },
+  sleeping: {
+    color: '#7c8fac',
+    bgColor: 'rgba(124, 143, 172, 0.1)',
+    icon: <PauseCircleOutlined />,
+  },
+  longRunning: {
+    color: '#fa896b',
+    bgColor: 'rgba(250, 137, 107, 0.1)',
+    icon: <WarningOutlined />,
+  },
+}
+
+interface StatCardProps {
+  title: string
+  value: number
+  style: { color: string; bgColor: string; icon: React.ReactNode }
+}
+
+function StatCard({ title, value, style }: StatCardProps) {
+  return (
+    <Card
+      style={{
+        background: '#fff',
+        borderRadius: 12,
+        border: 'none',
+        height: '100%',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+      }}
+      styles={{
+        body: {
+          padding: '16px 20px',
+          height: 90,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+        }
+      }}
+    >
+      <div style={{
+        width: 48,
+        height: 48,
+        borderRadius: 10,
+        background: style.bgColor,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 22,
+        color: style.color,
+        flexShrink: 0,
+      }}>
+        {style.icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 12,
+          color: '#5a6a85',
+          fontWeight: 500,
+          marginBottom: 2,
+        }}>
+          {title}
+        </div>
+        <div style={{
+          fontSize: 22,
+          fontWeight: 600,
+          color: '#2a3547',
+          lineHeight: 1.2,
+        }}>
+          {value.toLocaleString()}
+        </div>
+      </div>
+    </Card>
+  )
+}
 
 // Simple SQL formatter for pretty display
 const formatSQL = (sql: string): string => {
@@ -164,8 +251,11 @@ function Sessions() {
   const isIdleSession = (command: string) =>
     command === 'Sleep' || command === 'INACTIVE' || command === 'idle'
 
-  // Search filter function
-  const filterBySearch = (session: SessionInfo) => {
+  // Slow query threshold: 60 seconds (matching Dashboard definition)
+  const SLOW_QUERY_THRESHOLD = 60
+
+  // Search filter function (memoized)
+  const filterBySearch = useCallback((session: SessionInfo) => {
     if (!searchText) return true
     const search = searchText.toLowerCase()
 
@@ -184,29 +274,32 @@ function Sessions() {
     const value = session[searchColumn as keyof SessionInfo]
     if (value === null || value === undefined) return false
     return value.toString().toLowerCase().includes(search)
-  }
+  }, [searchText, searchColumn])
 
-  // Slow query threshold: 60 seconds (matching Dashboard definition)
-  const SLOW_QUERY_THRESHOLD = 60
-
-  // Filter sessions by type and search
-  const querySessions = sessions.filter((s) => {
+  // Memoize filtered sessions
+  const querySessions = useMemo(() => sessions.filter((s) => {
     const isQuery = !isIdleSession(s.command)
     if (!isQuery) return false
     if (!filterBySearch(s)) return false
     if (showSlowOnly && s.time <= SLOW_QUERY_THRESHOLD) return false
     return true
-  })
-  const connectionSessions = sessions.filter((s) => isIdleSession(s.command) && filterBySearch(s))
+  }), [sessions, filterBySearch, showSlowOnly])
 
-  const stats = {
+  const connectionSessions = useMemo(
+    () => sessions.filter((s) => isIdleSession(s.command) && filterBySearch(s)),
+    [sessions, filterBySearch]
+  )
+
+  // Memoize stats
+  const stats = useMemo(() => ({
     total: sessions.length,
     active: querySessions.length,
     sleeping: connectionSessions.length,
     longRunning: sessions.filter((s) => s.time > LONG_RUNNING_THRESHOLD && !isIdleSession(s.command)).length,
-  }
+  }), [sessions, querySessions.length, connectionSessions.length])
 
-  const columns = [
+  // Memoize columns
+  const columns = useMemo(() => [
     {
       title: 'PID',
       dataIndex: 'pid',
@@ -327,44 +420,55 @@ function Sessions() {
         </Popconfirm>
       ),
     },
-  ]
+  ], [])
 
   return (
     <div>
-      <Title level={2}>Sessions</Title>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24
+      }}>
+        <div>
+          <Title level={2} style={{ margin: 0, marginBottom: 4 }}>
+            <ThunderboltOutlined style={{ marginRight: 12 }} />
+            Sessions
+          </Title>
+          <Text type="secondary">Active database sessions and queries</Text>
+        </div>
+      </div>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic title="Total Sessions" value={stats.total} />
-          </Card>
+      {/* Stats Cards - CoreUI Style */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="Total Sessions"
+            value={stats.total}
+            style={statCardStyles.total}
+          />
         </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="Active Sessions"
-              value={stats.active}
-              valueStyle={{ color: '#1890ff' }}
-            />
-          </Card>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="Active Sessions"
+            value={stats.active}
+            style={statCardStyles.active}
+          />
         </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="Sleeping"
-              value={stats.sleeping}
-              valueStyle={{ color: '#8c8c8c' }}
-            />
-          </Card>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="Sleeping"
+            value={stats.sleeping}
+            style={statCardStyles.sleeping}
+          />
         </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic
-              title="Long Running (>30m)"
-              value={stats.longRunning}
-              valueStyle={{ color: stats.longRunning > 0 ? '#cf1322' : '#3f8600' }}
-            />
-          </Card>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="Long Running (>30m)"
+            value={stats.longRunning}
+            style={statCardStyles.longRunning}
+          />
         </Col>
       </Row>
 

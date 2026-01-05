@@ -1,9 +1,23 @@
 import apiClient from './client'
-import type { Account, CreateAccountRequest, ExpiringAccount, SetTablespaceRequest } from '../types'
+import type {
+  Account,
+  CreateAccountRequest,
+  ExpiringAccount,
+  SetTablespaceRequest,
+  CloneAccountRequest,
+  BatchCreateAccountRequest,
+  BatchDeleteRequest,
+  BatchUnlockRequest,
+  BatchOperationResult,
+  PaginatedAccountsResponse,
+} from '../types'
 
 export const accountsApi = {
   list: () =>
     apiClient.get<Account[]>('/accounts'),
+
+  listPaginated: (page: number, pageSize: number) =>
+    apiClient.get<PaginatedAccountsResponse>(`/accounts?page=${page}&pageSize=${pageSize}`),
 
   create: (data: CreateAccountRequest) =>
     apiClient.post<Account>('/accounts', data),
@@ -22,4 +36,24 @@ export const accountsApi = {
 
   setTablespace: (data: SetTablespaceRequest) =>
     apiClient.post('/accounts/tablespace', data),
+
+  // Clone account
+  clone: (data: CloneAccountRequest) =>
+    apiClient.post<Account>('/accounts/clone', data),
+
+  // Batch operations
+  batchCreate: (data: BatchCreateAccountRequest) =>
+    apiClient.post<BatchOperationResult>('/accounts/batch/create', data),
+
+  batchDelete: (data: BatchDeleteRequest) =>
+    apiClient.post<BatchOperationResult>('/accounts/batch/delete', data),
+
+  batchUnlock: (data: BatchUnlockRequest) =>
+    apiClient.post<BatchOperationResult>('/accounts/batch/unlock', data),
+
+  // Export
+  exportCsv: (includePermissions: boolean = false) =>
+    apiClient.get(`/accounts/export?format=csv&includePermissions=${includePermissions}`, {
+      responseType: 'blob',
+    }),
 }

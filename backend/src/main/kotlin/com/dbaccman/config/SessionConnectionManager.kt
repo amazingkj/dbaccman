@@ -3,6 +3,7 @@ package com.dbaccman.config
 import com.dbaccman.dialect.DatabaseDialect
 import com.dbaccman.dialect.DatabaseType
 import com.dbaccman.dialect.DialectFactory
+import com.dbaccman.dialect.OracleDialect
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.slf4j.LoggerFactory
@@ -18,6 +19,7 @@ data class SessionPool(
     val username: String,
     val dbType: DatabaseType,
     val dialect: DatabaseDialect,
+    val isContainerRoot: Boolean = false,  // Oracle CDB root flag
     var lastAccess: Long = System.currentTimeMillis()
 )
 
@@ -84,11 +86,35 @@ object SessionConnectionManager {
 
         val dataSource = HikariDataSource(config)
 
-        // Validate connection immediately
+        // Validate connection and detect Oracle CDB root
+        var isContainerRoot = false
         try {
             dataSource.connection.use { conn ->
                 conn.createStatement().use { stmt ->
                     stmt.execute(dialect.getConnectionTestQuery())
+                }
+
+                // Check if Oracle CDB root
+                if (dialect is OracleDialect) {
+                    try {
+                        conn.createStatement().use { stmt ->
+                            stmt.executeQuery(dialect.getContainerNameSql()).use { rs ->
+                                if (rs.next()) {
+                                    val containerName = rs.getString(1)
+                                    logger.info("Oracle container name detected: '$containerName'")
+                                    isContainerRoot = containerName == "CDB\$ROOT"
+                                    if (isContainerRoot) {
+                                        logger.info("Connected to Oracle CDB root - C## prefix will be used for user management")
+                                    } else {
+                                        logger.info("Connected to Oracle PDB '$containerName' - local users will be created")
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // Ignore - might not have access to this info
+                        logger.warn("Could not determine Oracle container type: ${e.message}")
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -102,7 +128,8 @@ object SessionConnectionManager {
             port = port,
             username = username,
             dbType = dbType,
-            dialect = dialect
+            dialect = dialect,
+            isContainerRoot = isContainerRoot
         )
         logger.info("Created session $sessionId for $username@$host:$port (${dbType.displayName})")
 
@@ -135,6 +162,15 @@ object SessionConnectionManager {
         val pool = sessionPools[sessionId]
             ?: throw IllegalStateException("Session not found or expired: $sessionId")
         return pool.dbType
+    }
+
+    /**
+     * Checks if session is connected to Oracle CDB root.
+     */
+    fun isContainerRoot(sessionId: String): Boolean {
+        val pool = sessionPools[sessionId]
+            ?: throw IllegalStateException("Session not found or expired: $sessionId")
+        return pool.isContainerRoot
     }
 
     /**
@@ -221,5 +257,38 @@ inline fun <T> useSessionConnectionWithDialect(sessionId: String, block: (Connec
     val dialect = SessionConnectionManager.getDialect(sessionId)
     return SessionConnectionManager.getConnection(sessionId).use { conn ->
         block(conn, dialect)
+    }
+}
+
+/**
+ * Utility function to execute Oracle DDL with _ORACLE_SCRIPT enabled/disabled.
+ * Handles CDB root detection and proper cleanup on error.
+ */
+inline fun <T> useOracleScriptContext(
+    sessionId: String,
+    crossinline block: (Connection, DatabaseDialect) -> T
+): T {
+    val isContainerRoot = SessionConnectionManager.isContainerRoot(sessionId)
+    val dialect = SessionConnectionManager.getDialect(sessionId)
+
+    return SessionConnectionManager.getConnection(sessionId).use { conn ->
+        if (isContainerRoot && dialect is OracleDialect) {
+            conn.createStatement().use { stmt ->
+                stmt.execute(dialect.getEnableLocalUserSql())
+            }
+        }
+        try {
+            block(conn, dialect)
+        } finally {
+            if (isContainerRoot && dialect is OracleDialect) {
+                try {
+                    conn.createStatement().use { stmt ->
+                        stmt.execute(dialect.getDisableLocalUserSql())
+                    }
+                } catch (ignored: Exception) {
+                    // Cleanup should not throw
+                }
+            }
+        }
     }
 }

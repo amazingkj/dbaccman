@@ -38,6 +38,14 @@ interface DatabaseDialect {
 
     fun getAllAccountsQuery(): String
 
+    fun getAccountCountQuery(): String
+
+    /**
+     * Returns paginated accounts query with LIMIT/OFFSET.
+     * Parameters: offset (Int), limit (Int)
+     */
+    fun getPaginatedAccountsQuery(): String
+
     fun getCreateUserSql(username: String, host: String, password: String): String
 
     fun getAlterUserPasswordExpireSql(username: String, host: String, expireDays: Int): String

@@ -59,3 +59,100 @@ data class UserInfo(
     val username: String,
     val role: String
 )
+
+// ==================== Clone Account ====================
+
+@Serializable
+data class CloneAccountRequest(
+    val sourceUsername: String,
+    val sourceHost: String = "%",
+    val newUsername: String,
+    val newHost: String = "%",
+    val newPassword: String,
+    val copyPermissions: Boolean = true,
+    val expireDays: Int = 90
+)
+
+// ==================== Batch Operations ====================
+
+@Serializable
+data class BatchCreateAccountRequest(
+    val accounts: List<CreateAccountRequest>
+)
+
+@Serializable
+data class BatchDeleteRequest(
+    val accounts: List<AccountIdentifier>
+)
+
+@Serializable
+data class BatchUnlockRequest(
+    val accounts: List<AccountIdentifier>
+)
+
+@Serializable
+data class AccountIdentifier(
+    val username: String,
+    val host: String = "%"
+)
+
+@Serializable
+data class BatchOperationResult(
+    val success: List<String>,
+    val failed: List<BatchOperationError>
+)
+
+@Serializable
+data class BatchOperationError(
+    val account: String,
+    val error: String
+)
+
+// ==================== Role Management (Oracle) ====================
+
+@Serializable
+data class Role(
+    val name: String,
+    val isDefault: Boolean = false,
+    val isAdmin: Boolean = false
+)
+
+@Serializable
+data class UserRole(
+    val username: String,
+    val roleName: String,
+    val isDefault: Boolean = false,
+    val isAdmin: Boolean = false
+)
+
+@Serializable
+data class GrantRoleRequest(
+    val username: String,
+    val host: String = "%",
+    val roles: List<String>,
+    val withAdminOption: Boolean = false
+)
+
+@Serializable
+data class RevokeRoleRequest(
+    val username: String,
+    val host: String = "%",
+    val roles: List<String>
+)
+
+// ==================== PDB Management (Oracle) ====================
+
+@Serializable
+data class PdbInfo(
+    val name: String,
+    val openMode: String,
+    val restricted: Boolean = false
+)
+
+// ==================== Export ====================
+
+@Serializable
+data class ExportRequest(
+    val format: String = "csv",  // csv, json
+    val includePermissions: Boolean = false
+)

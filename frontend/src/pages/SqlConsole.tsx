@@ -219,18 +219,30 @@ function SqlConsole() {
 
   return (
     <div>
-      <Title level={2}>
-        <CodeOutlined /> SQL Console
-        {user?.dbType && (
-          <Tag color={getDbTypeColor(user.dbType)} style={{ marginLeft: 12, fontSize: 14, verticalAlign: 'middle' }}>
-            {user.dbType.toUpperCase()}
-          </Tag>
-        )}
-      </Title>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24
+      }}>
+        <div>
+          <Title level={2} style={{ margin: 0, marginBottom: 4 }}>
+            <CodeOutlined style={{ marginRight: 12 }} />
+            SQL Console
+            {user?.dbType && (
+              <Tag color={getDbTypeColor(user.dbType)} style={{ marginLeft: 12, fontSize: 14, verticalAlign: 'middle' }}>
+                {user.dbType.toUpperCase()}
+              </Tag>
+            )}
+          </Title>
+          <Text type="secondary">Execute SQL queries and view results</Text>
+        </div>
+      </div>
 
       <Row gutter={[16, 16]}>
         <Col span={24}>
-          <Card size="small">
+          <Card size="small" style={{ borderRadius: 8 }}>
             <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
               <Col>
                 <Space>
@@ -324,7 +336,7 @@ function SqlConsole() {
         </Col>
 
         <Col span={24}>
-          <Card size="small">
+          <Card size="small" style={{ borderRadius: 8 }}>
             <Tabs
               activeKey={activeTab}
               onChange={setActiveTab}

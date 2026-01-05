@@ -17,11 +17,12 @@ import {
   Empty,
 } from 'antd'
 import {
-  SearchOutlined,
   PlusOutlined,
   DeleteOutlined,
   ReloadOutlined,
   DatabaseOutlined,
+  SafetyOutlined,
+  KeyOutlined,
 } from '@ant-design/icons'
 import { permissionsApi } from '../api/permissions'
 import { accountsApi } from '../api/accounts'
@@ -272,9 +273,23 @@ function Permissions() {
 
   return (
     <div>
-      <Title level={2}>Permissions</Title>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24
+      }}>
+        <div>
+          <Title level={2} style={{ margin: 0, marginBottom: 4 }}>
+            <SafetyOutlined style={{ marginRight: 12 }} />
+            Permissions
+          </Title>
+          <Text type="secondary">Database access control and privileges</Text>
+        </div>
+      </div>
 
-      <Card style={{ marginBottom: 24 }}>
+      <Card style={{ marginBottom: 24, borderRadius: 8 }}>
         <Row gutter={16} align="middle">
           <Col span={8}>
             <Text strong>Select Account:</Text>
@@ -336,11 +351,11 @@ function Permissions() {
           <Card
             title={
               <Space>
-                <SearchOutlined />
+                <KeyOutlined />
                 <span>Permissions for {selectedAccount}</span>
               </Space>
             }
-            style={{ marginBottom: 16 }}
+            style={{ marginBottom: 16, borderRadius: 8 }}
           >
             <Row gutter={16} align="middle">
               <Col>

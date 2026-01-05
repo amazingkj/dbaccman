@@ -5,7 +5,15 @@
       "Bash(./gradlew.bat test)",
       "Bash(find:*)",
       "Bash(git -C D:dbaccman status)",
-      "Bash(docker build:*)"
+      "Bash(docker build:*)",
+      "Bash(./gradlew.bat test:*)",
+      "Bash(./gradlew.bat compileKotlin)",
+      "Bash(.gradlew.bat compileKotlin)",
+      "Bash(D:/dbaccman/backend/gradlew.bat compileKotlin -p D:/dbaccman/backend)",
+      "Bash(D:/dbaccman/backend/gradlew.bat test -p D:/dbaccman/backend)",
+      "Bash(wc:*)",
+      "Bash(npm run build:*)",
+      "Bash(git -C D:/dbaccman status:*)"
     ]
   }
 }

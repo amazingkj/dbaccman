@@ -13,7 +13,6 @@ import {
   Card,
   Row,
   Col,
-  Statistic,
   Select,
   Progress,
   Tooltip,
@@ -25,13 +24,101 @@ import {
   DatabaseOutlined,
   SwapOutlined,
   RightOutlined,
+  HddOutlined,
+  PieChartOutlined,
 } from '@ant-design/icons'
 import { tablespacesApi } from '../api/tablespaces'
 import { tablesApi } from '../api/tables'
 import type { TablespaceInfo, CreateTablespaceRequest, TableInfo, DatabaseInfo } from '../types'
 
-const { Title } = Typography
+const { Title, Text } = Typography
 const { Option } = Select
+
+// Modernize-style stat card styles (white background with colored icons)
+const statCardStyles = {
+  total: {
+    color: '#5d87ff',
+    bgColor: 'rgba(93, 135, 255, 0.1)',
+    icon: <DatabaseOutlined />,
+  },
+  general: {
+    color: '#49beff',
+    bgColor: 'rgba(73, 190, 255, 0.1)',
+    icon: <HddOutlined />,
+  },
+  size: {
+    color: '#13deb9',
+    bgColor: 'rgba(19, 222, 185, 0.1)',
+    icon: <PieChartOutlined />,
+  },
+  allocated: {
+    color: '#ffae1f',
+    bgColor: 'rgba(255, 174, 31, 0.1)',
+    icon: <HddOutlined />,
+  },
+}
+
+interface StatCardProps {
+  title: string
+  value: string | number
+  style: { color: string; bgColor: string; icon: React.ReactNode }
+}
+
+function StatCard({ title, value, style }: StatCardProps) {
+  return (
+    <Card
+      style={{
+        background: '#fff',
+        borderRadius: 12,
+        border: 'none',
+        height: '100%',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+      }}
+      styles={{
+        body: {
+          padding: '16px 20px',
+          height: 90,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+        }
+      }}
+    >
+      <div style={{
+        width: 48,
+        height: 48,
+        borderRadius: 10,
+        background: style.bgColor,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: 22,
+        color: style.color,
+        flexShrink: 0,
+      }}>
+        {style.icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: 12,
+          color: '#5a6a85',
+          fontWeight: 500,
+          marginBottom: 2,
+        }}>
+          {title}
+        </div>
+        <div style={{
+          fontSize: 22,
+          fontWeight: 600,
+          color: '#2a3547',
+          lineHeight: 1.2,
+        }}>
+          {typeof value === 'number' ? value.toLocaleString() : value}
+        </div>
+      </div>
+    </Card>
+  )
+}
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 B'
@@ -307,28 +394,51 @@ function Tablespaces() {
 
   return (
     <div>
-      <Title level={2}>Tablespaces</Title>
+      {/* Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 24
+      }}>
+        <div>
+          <Title level={2} style={{ margin: 0, marginBottom: 4 }}>
+            <HddOutlined style={{ marginRight: 12 }} />
+            Tablespaces
+          </Title>
+          <Text type="secondary">Database storage management</Text>
+        </div>
+      </div>
 
-      <Row gutter={16} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Card>
-            <Statistic title="Total Tablespaces" value={tablespaces.length} />
-          </Card>
+      {/* Stats Cards - CoreUI Style */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="Total Tablespaces"
+            value={tablespaces.length}
+            style={statCardStyles.total}
+          />
         </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="General Tablespaces" value={generalCount} />
-          </Card>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="General Tablespaces"
+            value={generalCount}
+            style={statCardStyles.general}
+          />
         </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="Total Size" value={formatBytes(totalSize)} />
-          </Card>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="Total Size"
+            value={formatBytes(totalSize)}
+            style={statCardStyles.size}
+          />
         </Col>
-        <Col span={6}>
-          <Card>
-            <Statistic title="Total Allocated" value={formatBytes(totalAllocated)} />
-          </Card>
+        <Col xs={24} sm={12} lg={6}>
+          <StatCard
+            title="Total Allocated"
+            value={formatBytes(totalAllocated)}
+            style={statCardStyles.allocated}
+          />
         </Col>
       </Row>
 

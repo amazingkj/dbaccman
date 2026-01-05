@@ -6,9 +6,15 @@ import koKR from 'antd/locale/ko_KR'
 import App from './App'
 import './index.css'
 
+const theme = {
+  token: {
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif",
+  },
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <ConfigProvider locale={koKR}>
+    <ConfigProvider locale={koKR} theme={theme}>
       <BrowserRouter>
         <App />
       </BrowserRouter>

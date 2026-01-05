@@ -9,6 +9,7 @@ import {
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/authStore'
 import { authApi } from '../api/auth'
+import { formatToLocalTime } from '../utils/dateUtils'
 import type { PasswordExpiryInfo } from '../types'
 
 const { Title, Text } = Typography
@@ -151,7 +152,7 @@ function UserDashboard() {
                 {expiryInfo.host}
               </Descriptions.Item>
               <Descriptions.Item label="Password Last Changed">
-                {expiryInfo.passwordLastChanged || 'Unknown'}
+                {formatToLocalTime(expiryInfo.passwordLastChanged)}
               </Descriptions.Item>
               <Descriptions.Item label="Days Until Expiry">
                 {expiryInfo.daysUntilExpiry !== null ? (

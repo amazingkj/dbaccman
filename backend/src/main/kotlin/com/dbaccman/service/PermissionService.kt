@@ -88,6 +88,57 @@ class PermissionService {
         }
     }
 
+    /**
+     * Batch grant permissions - executes all grants in a single connection session.
+     * More efficient than calling grantPermission() multiple times.
+     * Returns a pair of (successCount, errors).
+     */
+    fun batchGrantPermissions(sessionId: String, requests: List<GrantPermissionRequest>): Pair<Int, List<String>> {
+        if (requests.isEmpty()) return Pair(0, emptyList())
+
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            var successCount = 0
+            val errors = mutableListOf<String>()
+
+            conn.createStatement().use { stmt ->
+                requests.forEach { request ->
+                    try {
+                        val sql = dialect.getGrantSql(
+                            privileges = request.privileges,
+                            database = request.database,
+                            table = request.table,
+                            username = request.username,
+                            host = request.host
+                        )
+                        stmt.execute(sql)
+                        successCount++
+                    } catch (e: Exception) {
+                        val target = if (request.table == "*") {
+                            "${request.database}.*"
+                        } else {
+                            "${request.database}.${request.table}"
+                        }
+                        errors.add("$target: ${e.message}")
+                    }
+                }
+            }
+
+            // Flush privileges once at the end (for MySQL)
+            dialect.getFlushPrivilegesSql()?.let { flushSql ->
+                conn.createStatement().execute(flushSql)
+            }
+
+            if (successCount > 0) {
+                AuditLogger.log(
+                    "BATCH_GRANT_PERMISSION",
+                    "Granted $successCount permissions to ${requests.first().username}@${requests.first().host}"
+                )
+            }
+
+            Pair(successCount, errors)
+        }
+    }
+
     fun revokePermission(sessionId: String, request: RevokePermissionRequest) {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getRevokeSql(

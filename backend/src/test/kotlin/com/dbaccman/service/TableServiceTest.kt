@@ -29,6 +29,7 @@ class TableServiceTest {
         val dbInfo = DatabaseInfo(
             name = "testdb",
             tableCount = 10,
+            totalRows = 5000L,
             size = 1024000L
         )
 
@@ -40,8 +41,8 @@ class TableServiceTest {
     @Test
     @DisplayName("DatabaseInfo equality should work correctly")
     fun testDatabaseInfoEquality() {
-        val db1 = DatabaseInfo("testdb", 5, 1000L)
-        val db2 = DatabaseInfo("testdb", 5, 1000L)
+        val db1 = DatabaseInfo("testdb", 5, 500L, 1000L)
+        val db2 = DatabaseInfo("testdb", 5, 500L, 1000L)
 
         assertEquals(db1, db2)
         assertEquals(db1.hashCode(), db2.hashCode())
@@ -53,10 +54,12 @@ class TableServiceTest {
         val dbInfo = DatabaseInfo(
             name = "emptydb",
             tableCount = 0,
+            totalRows = 0L,
             size = 0L
         )
 
         assertEquals(0, dbInfo.tableCount)
+        assertEquals(0L, dbInfo.totalRows)
         assertEquals(0L, dbInfo.size)
     }
 

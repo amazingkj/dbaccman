@@ -1,4 +1,9 @@
-@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+/* Global Font Family */
+:root {
+  --font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
 
 * {
   margin: 0;
@@ -6,31 +11,136 @@
   box-sizing: border-box;
 }
 
+html, body, #root {
+  font-family: var(--font-family);
+}
+
 body {
-  font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-family: var(--font-family);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: 'kern' 1;
+  color: #2a3547;
+  background: #f5f7fa;
 }
 
 #root {
   min-height: 100vh;
 }
 
-/* Ant Design Table - Compact & Consistent Style */
+/* ===== Global Ant Design Font Override ===== */
+.ant-app,
+.ant-layout,
+.ant-typography,
+.ant-btn,
+.ant-input,
+.ant-input-number,
+.ant-select,
+.ant-select-dropdown,
+.ant-picker,
+.ant-picker-dropdown,
+.ant-table,
+.ant-modal,
+.ant-modal-content,
+.ant-drawer,
+.ant-drawer-content,
+.ant-popover,
+.ant-popover-content,
+.ant-tooltip,
+.ant-tooltip-inner,
+.ant-dropdown,
+.ant-dropdown-menu,
+.ant-menu,
+.ant-form,
+.ant-form-item,
+.ant-card,
+.ant-list,
+.ant-tabs,
+.ant-tag,
+.ant-badge,
+.ant-alert,
+.ant-message,
+.ant-notification,
+.ant-spin,
+.ant-pagination,
+.ant-breadcrumb,
+.ant-steps,
+.ant-collapse,
+.ant-descriptions,
+.ant-statistic,
+.ant-result,
+.ant-empty,
+.ant-skeleton,
+.ant-transfer,
+.ant-tree,
+.ant-timeline,
+.ant-calendar,
+.ant-checkbox,
+.ant-radio,
+.ant-switch,
+.ant-slider,
+.ant-rate,
+.ant-upload,
+.ant-progress,
+.ant-avatar,
+.ant-image,
+.ant-comment,
+.ant-popconfirm {
+  font-family: var(--font-family) !important;
+}
+
+/* Ant Design Overrides - Modernize Style */
+.ant-btn {
+  font-weight: 500;
+  border-radius: 8px;
+}
+
+.ant-btn-primary {
+  background: #5d87ff;
+  border-color: #5d87ff;
+}
+
+.ant-btn-primary:hover {
+  background: #4570ea !important;
+  border-color: #4570ea !important;
+}
+
+.ant-card {
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.ant-input, .ant-select-selector, .ant-input-number {
+  border-radius: 8px !important;
+}
+
+.ant-tag {
+  border-radius: 6px;
+  font-weight: 500;
+}
+
+/* Ant Design Table - Modernize Style */
 .ant-table {
   font-size: 13px;
 }
 
 .ant-table-thead > tr > th {
-  padding: 10px 12px !important;
+  padding: 12px 16px !important;
   font-weight: 600;
-  background: #fafafa !important;
+  background: #f8fafc !important;
+  color: #5a6a85;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.5px;
 }
 
 .ant-table-tbody > tr > td {
-  padding: 8px 12px !important;
+  padding: 12px 16px !important;
+  color: #2a3547;
 }
 
 .ant-table-tbody > tr:hover > td {
-  background: #f5f5f5 !important;
+  background: #f0f5ff !important;
 }
 
 /* Fixed table layout for consistent column widths */
@@ -42,4 +152,36 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Modal Styling */
+.ant-modal-content {
+  border-radius: 12px;
+}
+
+.ant-modal-header {
+  border-radius: 12px 12px 0 0;
+}
+
+/* Popover & Dropdown Styling */
+.ant-popover-inner,
+.ant-dropdown-menu {
+  border-radius: 8px;
+}
+
+/* Select Dropdown */
+.ant-select-dropdown {
+  border-radius: 8px;
+}
+
+/* Message & Notification */
+.ant-message-notice-content,
+.ant-notification-notice {
+  border-radius: 8px;
+}
+
+/* Menu Styling */
+.ant-menu-item {
+  border-radius: 8px;
+  margin: 4px 8px !important;
 }

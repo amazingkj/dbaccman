@@ -103,9 +103,52 @@ class OracleDialect : DatabaseDialect {
         ORDER BY USERNAME
     """.trimIndent()
 
+    override fun getAccountCountQuery(): String = """
+        SELECT COUNT(*) as count
+        FROM DBA_USERS
+        WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+    """.trimIndent()
+
+    override fun getPaginatedAccountsQuery(): String = """
+        SELECT
+            USERNAME as username,
+            'localhost' as host,
+            TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
+            TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
+            CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked
+        FROM DBA_USERS
+        WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        ORDER BY USERNAME
+        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+    """.trimIndent()
+
     override fun getCreateUserSql(username: String, host: String, password: String): String {
-        // Oracle DDL doesn't support bind variables - use quoted identifier
-        return "CREATE USER ${quoteIdentifier(username)} IDENTIFIED BY \"${escapePassword(password)}\""
+        // Oracle usernames should be uppercase and unquoted for standard behavior
+        // Quoting makes them case-sensitive which causes issues
+        val oracleUsername = formatOracleUsername(username)
+        return "CREATE USER $oracleUsername IDENTIFIED BY \"${escapePassword(password)}\""
+    }
+
+    /**
+     * Creates a local user in PDB.
+     * In PDB context, users are automatically local users (no C## prefix needed).
+     */
+    fun getCreateLocalUserSql(username: String, password: String): String {
+        val oracleUsername = formatOracleUsername(username)
+        return "CREATE USER $oracleUsername IDENTIFIED BY \"${escapePassword(password)}\""
+    }
+
+    /**
+     * Formats username for Oracle: uppercase and only quote if contains special chars.
+     */
+    private fun formatOracleUsername(username: String): String {
+        val upperUsername = username.uppercase()
+        // Only quote if contains special characters (not alphanumeric, _, $, #)
+        return if (upperUsername.matches(Regex("^[A-Z][A-Z0-9_\$#]*$"))) {
+            upperUsername
+        } else {
+            quoteIdentifier(upperUsername)
+        }
     }
 
     /**
@@ -113,6 +156,34 @@ class OracleDialect : DatabaseDialect {
      * Returns 'CDB$ROOT' if in CDB root, PDB name otherwise.
      */
     fun getContainerNameSql(): String = "SELECT SYS_CONTEXT('USERENV', 'CON_NAME') FROM DUAL"
+
+    /**
+     * Returns SQL to check if this is a container database.
+     * Returns 'YES' if CDB, 'NO' if not.
+     */
+    fun getIsCdbSql(): String = "SELECT CDB FROM V\$DATABASE"
+
+    /**
+     * Formats username for CDB root - adds C## prefix if needed.
+     */
+    fun formatCdbUsername(username: String, isContainerRoot: Boolean): String {
+        return if (isContainerRoot && !username.uppercase().startsWith("C##")) {
+            "C##$username"
+        } else {
+            username
+        }
+    }
+
+    /**
+     * Removes C## prefix from username for display.
+     */
+    fun stripCdbPrefix(username: String): String {
+        return if (username.uppercase().startsWith("C##")) {
+            username.substring(3)
+        } else {
+            username
+        }
+    }
 
     /**
      * Returns SQL to enable local user creation in CDB root environment.
@@ -129,15 +200,27 @@ class OracleDialect : DatabaseDialect {
         // Oracle uses profiles for password expiry
         // We assign a profile with the naming convention DBACCMAN_<days>D
         val profileName = "DBACCMAN_${expireDays}D"
-        return "ALTER USER ${quoteIdentifier(username)} PROFILE $profileName"
+        val oracleUsername = formatOracleUsername(username)
+        return "ALTER USER $oracleUsername PROFILE $profileName"
+    }
+
+    /**
+     * Returns SQL to alter user profile with optional CONTAINER=CURRENT for PDB.
+     */
+    fun getAlterUserProfileSql(username: String, expireDays: Int, isPdb: Boolean = false): String {
+        val profileName = "DBACCMAN_${expireDays}D"
+        val containerClause = if (isPdb) " CONTAINER=CURRENT" else ""
+        val oracleUsername = formatOracleUsername(username)
+        return "ALTER USER $oracleUsername PROFILE $profileName$containerClause"
     }
 
     /**
      * Returns SQL to create a profile with specific password lifetime.
      */
-    fun getCreateProfileSql(expireDays: Int): String {
+    fun getCreateProfileSql(expireDays: Int, isPdb: Boolean = false): String {
         val profileName = "DBACCMAN_${expireDays}D"
-        return "CREATE PROFILE $profileName LIMIT PASSWORD_LIFE_TIME $expireDays"
+        val containerClause = if (isPdb) " CONTAINER=CURRENT" else ""
+        return "CREATE PROFILE $profileName LIMIT PASSWORD_LIFE_TIME $expireDays$containerClause"
     }
 
     /**
@@ -153,19 +236,23 @@ class OracleDialect : DatabaseDialect {
     fun getProfileName(expireDays: Int): String = "DBACCMAN_${expireDays}D"
 
     override fun getAlterUserPasswordSql(username: String, host: String, newPassword: String): String {
-        return "ALTER USER ${quoteIdentifier(username)} IDENTIFIED BY \"${escapePassword(newPassword)}\""
+        val oracleUsername = formatOracleUsername(username)
+        return "ALTER USER $oracleUsername IDENTIFIED BY \"${escapePassword(newPassword)}\""
     }
 
     override fun getExpirePasswordSql(username: String, host: String): String {
-        return "ALTER USER ${quoteIdentifier(username)} PASSWORD EXPIRE"
+        val oracleUsername = formatOracleUsername(username)
+        return "ALTER USER $oracleUsername PASSWORD EXPIRE"
     }
 
     override fun getDropUserSql(username: String, host: String): String {
-        return "DROP USER ${quoteIdentifier(username)} CASCADE"
+        val oracleUsername = formatOracleUsername(username)
+        return "DROP USER $oracleUsername CASCADE"
     }
 
     override fun getUnlockAccountSql(username: String, host: String): String {
-        return "ALTER USER ${quoteIdentifier(username)} ACCOUNT UNLOCK"
+        val oracleUsername = formatOracleUsername(username)
+        return "ALTER USER $oracleUsername ACCOUNT UNLOCK"
     }
 
     private fun escapePassword(password: String): String {
@@ -188,12 +275,14 @@ class OracleDialect : DatabaseDialect {
     override fun getFlushPrivilegesSql(): String? = null // Oracle doesn't need flush
 
     override fun getSetDefaultTablespaceSql(username: String, host: String, tablespace: String): String {
-        return "ALTER USER ${quoteIdentifier(username)} DEFAULT TABLESPACE ${quoteIdentifier(tablespace)}"
+        val oracleUsername = formatOracleUsername(username)
+        return "ALTER USER $oracleUsername DEFAULT TABLESPACE ${quoteIdentifier(tablespace)}"
     }
 
     override fun getSetTablespaceQuotaSql(username: String, host: String, tablespace: String, quota: String): String {
         // quota can be "UNLIMITED" or a size like "100M", "1G"
-        return "ALTER USER ${quoteIdentifier(username)} QUOTA $quota ON ${quoteIdentifier(tablespace)}"
+        val oracleUsername = formatOracleUsername(username)
+        return "ALTER USER $oracleUsername QUOTA $quota ON ${quoteIdentifier(tablespace)}"
     }
 
     // ==================== Permission Queries ====================
@@ -239,7 +328,8 @@ class OracleDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return "GRANT $privList ON $target TO ${quoteIdentifier(username)}"
+        val oracleUsername = formatOracleUsername(username)
+        return "GRANT $privList ON $target TO $oracleUsername"
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
@@ -249,7 +339,8 @@ class OracleDialect : DatabaseDialect {
         } else {
             "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
         }
-        return "REVOKE $privList ON $target FROM ${quoteIdentifier(username)}"
+        val oracleUsername = formatOracleUsername(username)
+        return "REVOKE $privList ON $target FROM $oracleUsername"
     }
 
     override fun getShowDatabasesQuery(): String = """
@@ -494,4 +585,98 @@ class OracleDialect : DatabaseDialect {
         AND d.ACCOUNT_STATUS = 'OPEN'
         ORDER BY u.USERNAME
     """.trimIndent()
+
+    // ==================== Role Management ====================
+
+    /**
+     * Returns all available roles in the database.
+     */
+    fun getAllRolesQuery(): String = """
+        SELECT
+            ROLE as name,
+            CASE WHEN ROLE IN ('DBA', 'SYSDBA', 'SYSOPER', 'SYSBACKUP', 'SYSDG', 'SYSKM', 'SYSRAC')
+                 THEN 1 ELSE 0 END as is_admin
+        FROM DBA_ROLES
+        ORDER BY ROLE
+    """.trimIndent()
+
+    /**
+     * Returns roles granted to a specific user.
+     */
+    fun getUserRolesQuery(): String = """
+        SELECT
+            GRANTEE as username,
+            GRANTED_ROLE as role_name,
+            CASE WHEN DEFAULT_ROLE = 'YES' THEN 1 ELSE 0 END as is_default,
+            CASE WHEN ADMIN_OPTION = 'YES' THEN 1 ELSE 0 END as is_admin
+        FROM DBA_ROLE_PRIVS
+        WHERE GRANTEE = UPPER(?)
+        ORDER BY GRANTED_ROLE
+    """.trimIndent()
+
+    /**
+     * Returns SQL to grant a role to a user.
+     */
+    fun getGrantRoleSql(username: String, role: String, withAdminOption: Boolean = false): String {
+        val adminOption = if (withAdminOption) " WITH ADMIN OPTION" else ""
+        val oracleUsername = formatOracleUsername(username)
+        val oracleRole = role.uppercase()  // Roles are also uppercase in Oracle
+        return "GRANT $oracleRole TO $oracleUsername$adminOption"
+    }
+
+    /**
+     * Returns SQL to revoke a role from a user.
+     */
+    fun getRevokeRoleSql(username: String, role: String): String {
+        val oracleUsername = formatOracleUsername(username)
+        val oracleRole = role.uppercase()
+        return "REVOKE $oracleRole FROM $oracleUsername"
+    }
+
+    /**
+     * Returns common roles that are safe to grant.
+     */
+    fun getCommonRoles(): List<String> = listOf(
+        "CONNECT",
+        "RESOURCE",
+        "DBA",
+        "EXP_FULL_DATABASE",
+        "IMP_FULL_DATABASE",
+        "SELECT_CATALOG_ROLE",
+        "EXECUTE_CATALOG_ROLE",
+        "DELETE_CATALOG_ROLE",
+        "RECOVERY_CATALOG_OWNER"
+    )
+
+    // ==================== PDB Management ====================
+
+    /**
+     * Returns all PDBs in the CDB.
+     */
+    fun getPdbListQuery(): String = """
+        SELECT
+            NAME as name,
+            OPEN_MODE as open_mode,
+            CASE WHEN RESTRICTED = 'YES' THEN 1 ELSE 0 END as restricted
+        FROM V${'$'}PDBS
+        ORDER BY NAME
+    """.trimIndent()
+
+    /**
+     * Returns SQL to switch to a specific PDB.
+     */
+    fun getSwitchPdbSql(pdbName: String): String {
+        return "ALTER SESSION SET CONTAINER = ${pdbName.uppercase()}"
+    }
+
+    /**
+     * Returns SQL to get current container name.
+     */
+    fun getCurrentContainerQuery(): String =
+        "SELECT SYS_CONTEXT('USERENV', 'CON_NAME') as container_name FROM DUAL"
+
+    /**
+     * Returns SQL to check if current database is a CDB.
+     */
+    fun getIsCdbQuery(): String = "SELECT CDB FROM V\$DATABASE"
 }

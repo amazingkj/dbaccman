@@ -9,29 +9,27 @@ class DashboardService {
     private val tableService = TableService()
 
     fun getDashboardStats(sessionId: String): DashboardStats {
-        // Get accounts count
-        val accounts = accountService.getAllAccounts(sessionId)
-        val totalAccounts = accounts.size
+        // Optimized: Use COUNT(*) query instead of fetching all accounts
+        val totalAccounts = accountService.getAccountCount(sessionId)
 
-        // Get expiring accounts
+        // Get expiring accounts (still needed for actual data display)
         val expiringAccounts = accountService.getExpiringAccounts(sessionId, 30)
 
-        // Get sessions
-        val sessions = sessionService.getActiveSessions(sessionId)
-        // Idle session states: MySQL uses 'Sleep', Oracle uses 'INACTIVE', PostgreSQL uses 'idle'
-        val activeSessions = sessions.filter { it.command != "Sleep" && it.command != "INACTIVE" && it.command != "idle" }
-        val slowQueries = activeSessions.filter { it.time > 60 }
-        val longRunningSessions = slowQueries.sortedByDescending { it.time }.take(5)
+        // Optimized: Use getSessionStats() for counts, getLongRunningQueries() for data
+        val sessionStats = sessionService.getSessionStats(sessionId)
+        val longRunningSessions = sessionService.getLongRunningQueries(sessionId, 60)
+            .sortedByDescending { it.time }
+            .take(5)
 
-        // Get database info
+        // Get database info (still needed for actual data display)
         val databases = tableService.getDatabases(sessionId)
         val totalTables = databases.sumOf { it.tableCount }
 
         return DashboardStats(
             totalAccounts = totalAccounts,
-            activeSessions = activeSessions.size,
+            activeSessions = sessionStats.activeSessions,
             expiringSoon = expiringAccounts.size,
-            slowQueries = slowQueries.size,
+            slowQueries = sessionStats.longRunningSessions,
             totalDatabases = databases.size,
             totalTables = totalTables,
             expiringAccounts = expiringAccounts.take(5),
