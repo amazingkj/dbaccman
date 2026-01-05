@@ -61,32 +61,62 @@ class QueryService {
                 }
             }
 
-            // Remove trailing semicolons (Oracle doesn't accept them via JDBC)
-            val trimmedQuery = query.trim().trimEnd(';').trim()
-            val isSelect = isSelectQuery(trimmedQuery)
+            // Split by semicolons to support multiple statements
+            val statements = splitStatements(query)
+
+            if (statements.isEmpty()) {
+                throw IllegalArgumentException("No valid SQL statements found")
+            }
 
             try {
-                if (isSelect) {
-                    conn.createStatement().use { stmt ->
-                        stmt.maxRows = MAX_ROWS
-                        stmt.executeQuery(trimmedQuery).use { rs ->
-                            val metaData = rs.metaData
-                            val columnCount = metaData.columnCount
+                // If single statement, execute normally
+                if (statements.size == 1) {
+                    val trimmedQuery = statements[0]
+                    val isSelect = isSelectQuery(trimmedQuery)
 
-                            val columns = (1..columnCount).map { metaData.getColumnLabel(it) }
-                            val rows = mutableListOf<List<Any?>>()
+                    if (isSelect) {
+                        conn.createStatement().use { stmt ->
+                            stmt.maxRows = MAX_ROWS
+                            stmt.executeQuery(trimmedQuery).use { rs ->
+                                val metaData = rs.metaData
+                                val columnCount = metaData.columnCount
 
-                            while (rs.next() && rows.size < MAX_ROWS) {
-                                val row = (1..columnCount).map { i ->
-                                    try {
-                                        rs.getObject(i)?.toString()
-                                    } catch (e: Exception) {
-                                        "[Error reading column]"
+                                val columns = (1..columnCount).map { metaData.getColumnLabel(it) }
+                                val rows = mutableListOf<List<Any?>>()
+
+                                while (rs.next() && rows.size < MAX_ROWS) {
+                                    val row = (1..columnCount).map { i ->
+                                        try {
+                                            rs.getObject(i)?.toString()
+                                        } catch (e: Exception) {
+                                            "[Error reading column]"
+                                        }
                                     }
+                                    rows.add(row)
                                 }
-                                rows.add(row)
-                            }
 
+                                val executionTime = System.currentTimeMillis() - startTime
+
+                                AuditLogger.logQuery(
+                                    user = username,
+                                    query = trimmedQuery,
+                                    database = account,
+                                    ipAddress = ipAddress,
+                                    success = true
+                                )
+
+                                QueryResult(
+                                    columns = columns,
+                                    rows = rows,
+                                    rowCount = rows.size,
+                                    executionTimeMs = executionTime,
+                                    isSelectQuery = true
+                                )
+                            }
+                        }
+                    } else {
+                        conn.createStatement().use { stmt ->
+                            val affectedRows = stmt.executeUpdate(trimmedQuery)
                             val executionTime = System.currentTimeMillis() - startTime
 
                             AuditLogger.logQuery(
@@ -98,44 +128,74 @@ class QueryService {
                             )
 
                             QueryResult(
-                                columns = columns,
-                                rows = rows,
-                                rowCount = rows.size,
+                                columns = listOf("Affected Rows"),
+                                rows = listOf(listOf(affectedRows)),
+                                rowCount = 1,
                                 executionTimeMs = executionTime,
-                                isSelectQuery = true
+                                affectedRows = affectedRows,
+                                isSelectQuery = false
                             )
                         }
                     }
                 } else {
-                    // Non-SELECT query (INSERT, UPDATE, DELETE, etc.)
-                    conn.createStatement().use { stmt ->
-                        val affectedRows = stmt.executeUpdate(trimmedQuery)
-                        val executionTime = System.currentTimeMillis() - startTime
+                    // Multiple statements - execute each and return summary
+                    var totalAffectedRows = 0
+                    val results = mutableListOf<String>()
 
-                        AuditLogger.logQuery(
-                            user = username,
-                            query = trimmedQuery,
-                            database = account,
-                            ipAddress = ipAddress,
-                            success = true
-                        )
-
-                        QueryResult(
-                            columns = listOf("Affected Rows"),
-                            rows = listOf(listOf(affectedRows)),
-                            rowCount = 1,
-                            executionTimeMs = executionTime,
-                            affectedRows = affectedRows,
-                            isSelectQuery = false
-                        )
+                    conn.autoCommit = false
+                    try {
+                        for ((index, stmt) in statements.withIndex()) {
+                            val isSelect = isSelectQuery(stmt)
+                            if (isSelect) {
+                                conn.createStatement().use { s ->
+                                    s.maxRows = MAX_ROWS
+                                    s.executeQuery(stmt).use { rs ->
+                                        var rowCount = 0
+                                        while (rs.next()) rowCount++
+                                        results.add("Statement ${index + 1}: SELECT returned $rowCount rows")
+                                    }
+                                }
+                            } else {
+                                conn.createStatement().use { s ->
+                                    val affected = s.executeUpdate(stmt)
+                                    totalAffectedRows += affected
+                                    results.add("Statement ${index + 1}: $affected rows affected")
+                                }
+                            }
+                        }
+                        conn.commit()
+                    } catch (e: Exception) {
+                        conn.rollback()
+                        throw e
+                    } finally {
+                        conn.autoCommit = true
                     }
+
+                    val executionTime = System.currentTimeMillis() - startTime
+
+                    AuditLogger.logQuery(
+                        user = username,
+                        query = "${statements.size} statements executed",
+                        database = account,
+                        ipAddress = ipAddress,
+                        success = true
+                    )
+
+                    QueryResult(
+                        columns = listOf("Result"),
+                        rows = results.map { listOf(it) },
+                        rowCount = results.size,
+                        executionTimeMs = executionTime,
+                        affectedRows = totalAffectedRows,
+                        isSelectQuery = false
+                    )
                 }
             } catch (e: Exception) {
                 val executionTime = System.currentTimeMillis() - startTime
 
                 AuditLogger.logQuery(
                     user = username,
-                    query = trimmedQuery,
+                    query = query.take(500),
                     database = account,
                     ipAddress = ipAddress,
                     success = false,
@@ -176,6 +236,49 @@ class QueryService {
                upperQuery.startsWith("DESC") ||
                upperQuery.startsWith("EXPLAIN") ||
                upperQuery.startsWith("WITH")  // CTE that typically ends with SELECT
+    }
+
+    /**
+     * Split SQL statements by semicolon, respecting quoted strings.
+     */
+    private fun splitStatements(query: String): List<String> {
+        val statements = mutableListOf<String>()
+        val current = StringBuilder()
+        var inSingleQuote = false
+        var inDoubleQuote = false
+        var i = 0
+
+        while (i < query.length) {
+            val c = query[i]
+
+            when {
+                c == '\'' && !inDoubleQuote -> {
+                    inSingleQuote = !inSingleQuote
+                    current.append(c)
+                }
+                c == '"' && !inSingleQuote -> {
+                    inDoubleQuote = !inDoubleQuote
+                    current.append(c)
+                }
+                c == ';' && !inSingleQuote && !inDoubleQuote -> {
+                    val stmt = current.toString().trim()
+                    if (stmt.isNotBlank()) {
+                        statements.add(stmt)
+                    }
+                    current.clear()
+                }
+                else -> current.append(c)
+            }
+            i++
+        }
+
+        // Add last statement if any
+        val lastStmt = current.toString().trim()
+        if (lastStmt.isNotBlank()) {
+            statements.add(lastStmt)
+        }
+
+        return statements
     }
 }
 

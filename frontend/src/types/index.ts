@@ -172,8 +172,8 @@ export interface Permission {
 export interface GrantPermissionRequest {
   username: string
   host: string
-  database: string
-  table: string
+  database?: string  // Optional for Oracle system privileges
+  table?: string
   privileges: string[]
 }
 

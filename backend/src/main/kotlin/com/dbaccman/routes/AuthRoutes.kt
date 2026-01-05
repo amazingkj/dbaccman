@@ -182,6 +182,8 @@ private fun getConnectionErrorMessage(e: Exception, host: String, port: Int, dbT
         // Oracle errors
         message.contains("ORA-01017") ->
             "Invalid username or password"
+        message.contains("ORA-01045") ->
+            "User lacks CREATE SESSION privilege. Contact your DBA to grant login permission."
         message.contains("ORA-12541") ->
             "No listener. Check if Oracle listener is running on $host:$port"
         message.contains("ORA-12514") ->

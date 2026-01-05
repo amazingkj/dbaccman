@@ -78,7 +78,7 @@ function MainLayout() {
             }}
             onClick={() => navigate('/dashboard')}
           >
-            D-BAM
+            DONUT
           </div>
           {user && (
             <Space size="middle">
@@ -123,17 +123,19 @@ function MainLayout() {
             <Outlet />
           </div>
         </Content>
-        <Footer style={{ textAlign: 'center' }}>
-          D-BAM ©{new Date().getFullYear()} - Click, Not Command
-          <br />
-          <a
-            href="https://github.com/amazingkj/dbaccman/issues"
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{ color: '#1890ff' }}
-          >
-            Report an issue
-          </a>
+        <Footer style={{ textAlign: 'center', padding: '16px 50px', background: 'transparent' }}>
+          <span style={{ fontSize: 12, color: '#8c8c8c' }}>
+            DONUT ©{new Date().getFullYear()} - Click, Not Command
+            {' · '}
+            <a
+              href="https://github.com/amazingkj/dbaccman/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: '#8c8c8c', textDecoration: 'underline' }}
+            >
+              Report an issue
+            </a>
+          </span>
         </Footer>
       </Layout>
     </Layout>

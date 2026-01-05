@@ -9,9 +9,29 @@ import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.Serializable
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("SessionRoutes")
+
+@Serializable
+data class BulkKillRequest(
+    val sessions: List<SessionTargetDto>
+)
+
+@Serializable
+data class SessionTargetDto(
+    val pid: Long,
+    val serialNum: Long? = null
+)
+
+@Serializable
+data class BulkKillResponse(
+    val success: Int,
+    val failed: Int,
+    val errors: List<String>,
+    val message: String
+)
 
 fun Route.sessionRoutes() {
     val sessionService = SessionService()
@@ -62,6 +82,29 @@ fun Route.sessionRoutes() {
                     val serialNum = call.request.queryParameters["serialNum"]?.toLongOrNull()
                     sessionService.killQuery(sessionId, pid, serialNum)
                     call.respond(MessageResponse("Query killed successfully"))
+                }
+            }
+
+            post("/bulk-kill") {
+                call.handleAdminMutationRoute(logger, "Failed to bulk kill sessions") {
+                    val sessionId = call.getSessionId()
+                    val request = call.receive<BulkKillRequest>()
+
+                    if (request.sessions.isEmpty()) {
+                        throw IllegalArgumentException("No sessions specified")
+                    }
+
+                    val targets = request.sessions.map {
+                        SessionService.SessionTarget(it.pid, it.serialNum)
+                    }
+                    val result = sessionService.killSessions(sessionId, targets)
+
+                    call.respond(BulkKillResponse(
+                        success = result.success,
+                        failed = result.failed,
+                        errors = result.errors,
+                        message = "Killed ${result.success} session(s), ${result.failed} failed"
+                    ))
                 }
             }
         }

@@ -31,4 +31,9 @@ export const tablesApi = {
 
   getTableData: (database: string, table: string, limit: number = 100) =>
     apiClient.get<TableDataResult>(`/tables/${encodeURIComponent(database)}/${encodeURIComponent(table)}/data?limit=${limit}`),
+
+  gatherStats: (database: string, table?: string) =>
+    apiClient.post<{ success: boolean }>(
+      `/tables/${encodeURIComponent(database)}/gather-stats${table ? `?table=${encodeURIComponent(table)}` : ''}`
+    ),
 }

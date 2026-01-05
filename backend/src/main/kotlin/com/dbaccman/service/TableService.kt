@@ -20,7 +20,7 @@ class TableService {
                                 name = rs.getString("name"),
                                 tableCount = rs.getInt("table_count"),
                                 totalRows = rs.getLong("total_rows"),
-                                size = rs.getLong("size")
+                                size = rs.getLong("total_size")
                             )
                         )
                     }
@@ -43,8 +43,8 @@ class TableService {
                             TableInfo(
                                 name = rs.getString("name"),
                                 engine = rs.getString("engine"),
-                                rows = rs.getLong("rows"),
-                                size = rs.getLong("size"),
+                                rows = rs.getLong("row_count"),
+                                size = rs.getLong("table_size"),
                                 createTime = rs.getString("create_time")
                             )
                         )
@@ -174,6 +174,25 @@ class TableService {
                         rowCount = rows.size
                     )
                 }
+            }
+        }
+    }
+
+    fun gatherStats(sessionId: String, schema: String, table: String? = null): Boolean {
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = dialect.getGatherStatsSql(schema, table)
+            if (sql != null) {
+                conn.createStatement().use { stmt ->
+                    stmt.execute(sql)
+                }
+                AuditLogger.log(
+                    "GATHER_STATS",
+                    if (table != null) "Gathered statistics for table $schema.$table"
+                    else "Gathered statistics for schema $schema"
+                )
+                true
+            } else {
+                false
             }
         }
     }

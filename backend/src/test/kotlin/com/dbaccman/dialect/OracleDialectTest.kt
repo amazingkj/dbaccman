@@ -218,11 +218,12 @@ class OracleDialectTest {
     }
 
     @Test
-    @DisplayName("Grant SQL should be properly formatted for ANY TABLE")
+    @DisplayName("Grant SQL should be properly formatted for ANY TABLE system privileges")
     fun testGrantSqlForSchema() {
         val sql = dialect.getGrantSql(listOf("SELECT", "INSERT"), "TESTSCHEMA", "*", "testuser", "localhost")
-        assertTrue(sql.contains("GRANT SELECT, INSERT"))
-        assertTrue(sql.contains("ANY TABLE"))
+        // Oracle uses "SELECT ANY TABLE", "INSERT ANY TABLE" format for system privileges
+        assertTrue(sql.contains("SELECT ANY TABLE"))
+        assertTrue(sql.contains("INSERT ANY TABLE"))
         assertTrue(sql.contains("TO TESTUSER"))  // Uppercase without quotes
     }
 
@@ -239,6 +240,39 @@ class OracleDialectTest {
         val sql = dialect.getRevokeSql(listOf("DELETE"), "HR", "*", "testuser", "localhost")
         assertTrue(sql.contains("REVOKE DELETE"))
         assertTrue(sql.contains("FROM TESTUSER"))  // Uppercase without quotes
+    }
+
+    @Test
+    @DisplayName("Grant SQL should support CREATE SESSION system privilege")
+    fun testGrantSqlCreateSession() {
+        val sql = dialect.getGrantSql(listOf("CREATE SESSION"), "", "*", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT CREATE SESSION TO TESTUSER"))
+        assertFalse(sql.contains("ANY TABLE"))  // Should NOT contain ANY TABLE
+    }
+
+    @Test
+    @DisplayName("Grant SQL should support multiple system privileges")
+    fun testGrantSqlMultipleSystemPrivileges() {
+        val sql = dialect.getGrantSql(listOf("CREATE SESSION", "CREATE TABLE", "CREATE VIEW"), "", "*", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW"))
+        assertTrue(sql.contains("TO TESTUSER"))
+    }
+
+    @Test
+    @DisplayName("Revoke SQL should support system privileges")
+    fun testRevokeSqlSystemPrivileges() {
+        val sql = dialect.getRevokeSql(listOf("CREATE SESSION"), "", "*", "testuser", "localhost")
+        assertTrue(sql.contains("REVOKE CREATE SESSION"))
+        assertTrue(sql.contains("FROM TESTUSER"))
+    }
+
+    @Test
+    @DisplayName("Grant SQL should filter invalid Oracle object privileges")
+    fun testGrantSqlFiltersInvalidPrivileges() {
+        // CREATE VIEW is a MySQL privilege, not valid for Oracle object grants
+        val sql = dialect.getGrantSql(listOf("SELECT", "INSERT"), "HR", "EMPLOYEES", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT SELECT, INSERT"))
+        assertTrue(sql.contains("ON \"HR\".\"EMPLOYEES\""))
     }
 
     @Test

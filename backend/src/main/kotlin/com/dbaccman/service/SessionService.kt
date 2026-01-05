@@ -82,6 +82,38 @@ class SessionService {
         }
     }
 
+    data class SessionTarget(val pid: Long, val serialNum: Long?)
+
+    data class BulkKillResult(
+        val success: Int,
+        val failed: Int,
+        val errors: List<String>
+    )
+
+    fun killSessions(sessionId: String, targets: List<SessionTarget>): BulkKillResult {
+        var success = 0
+        var failed = 0
+        val errors = mutableListOf<String>()
+
+        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            for (target in targets) {
+                try {
+                    val sql = dialect.getKillSessionSql(target.pid, target.serialNum)
+                    conn.createStatement().use { stmt ->
+                        stmt.execute(sql)
+                    }
+                    success++
+                    AuditLogger.log("KILL_SESSION", "Killed session with PID: ${target.pid}" + (target.serialNum?.let { ", SERIAL#: $it" } ?: ""))
+                } catch (e: Exception) {
+                    failed++
+                    errors.add("PID ${target.pid}: ${e.message}")
+                }
+            }
+        }
+
+        return BulkKillResult(success, failed, errors)
+    }
+
     fun getLongRunningQueries(sessionId: String, thresholdSeconds: Int = 60): List<SessionInfo> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getLongRunningQueriesQuery()

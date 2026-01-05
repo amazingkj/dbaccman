@@ -27,12 +27,15 @@ import {
 import { permissionsApi } from '../api/permissions'
 import { accountsApi } from '../api/accounts'
 import { tablespacesApi } from '../api/tablespaces'
-import type { Permission, GrantPermissionRequest, Account, TablespaceInfo } from '../types'
+import { tablesApi } from '../api/tables'
+import { useAuthStore } from '../store/authStore'
+import type { Permission, GrantPermissionRequest, Account, TablespaceInfo, DatabaseInfo } from '../types'
 
 const { Title, Text } = Typography
 const { Option } = Select
 
-const AVAILABLE_PRIVILEGES = [
+// MySQL privileges
+const MYSQL_PRIVILEGES = [
   'SELECT',
   'INSERT',
   'UPDATE',
@@ -50,18 +53,83 @@ const AVAILABLE_PRIVILEGES = [
   'REFERENCES',
 ]
 
-const PRIVILEGE_PRESETS = {
-  readOnly: ['SELECT'],
-  readWrite: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
-  ddl: ['CREATE', 'DROP', 'INDEX', 'ALTER'],
-  all: AVAILABLE_PRIVILEGES,
+// Oracle object privileges (granted ON specific objects)
+const ORACLE_OBJECT_PRIVILEGES = [
+  'SELECT',
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'ALTER',
+  'INDEX',
+  'EXECUTE',
+  'REFERENCES',
+]
+
+// Oracle system privileges (granted TO user, no ON clause)
+const ORACLE_SYSTEM_PRIVILEGES = [
+  'CREATE SESSION',
+  'CREATE TABLE',
+  'CREATE VIEW',
+  'CREATE PROCEDURE',
+  'CREATE SEQUENCE',
+  'CREATE TRIGGER',
+  'CREATE SYNONYM',
+  'CREATE TYPE',
+  'UNLIMITED TABLESPACE',
+]
+
+// PostgreSQL privileges
+const POSTGRESQL_PRIVILEGES = [
+  'SELECT',
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'TRUNCATE',
+  'REFERENCES',
+  'TRIGGER',
+]
+
+const getObjectPrivilegesForDbType = (dbType: string | undefined): string[] => {
+  switch (dbType?.toUpperCase()) {
+    case 'ORACLE':
+      return ORACLE_OBJECT_PRIVILEGES
+    case 'POSTGRESQL':
+      return POSTGRESQL_PRIVILEGES
+    default:
+      return MYSQL_PRIVILEGES
+  }
+}
+
+const getSystemPrivilegesForDbType = (dbType: string | undefined): string[] => {
+  switch (dbType?.toUpperCase()) {
+    case 'ORACLE':
+      return ORACLE_SYSTEM_PRIVILEGES
+    default:
+      return []
+  }
+}
+
+const getPresetsForDbType = (dbType: string | undefined) => {
+  const privileges = getObjectPrivilegesForDbType(dbType)
+  return {
+    readOnly: ['SELECT'],
+    readWrite: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'].filter(p => privileges.includes(p)),
+    ddl: ['CREATE', 'DROP', 'INDEX', 'ALTER'].filter(p => privileges.includes(p)),
+    all: privileges,
+  }
 }
 
 function Permissions() {
+  const { user } = useAuthStore()
+  const dbType = user?.dbType
+  const availablePrivileges = getObjectPrivilegesForDbType(dbType)
+  const availableSystemPrivileges = getSystemPrivilegesForDbType(dbType)
+  const privilegePresets = getPresetsForDbType(dbType)
+
   const [accounts, setAccounts] = useState<Account[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
   const [permissions, setPermissions] = useState<Permission[]>([])
-  const [databases, setDatabases] = useState<string[]>([])
+  const [databases, setDatabases] = useState<DatabaseInfo[]>([])
   const [loading, setLoading] = useState(false)
   const [grantModalOpen, setGrantModalOpen] = useState(false)
   const [tablespaceModalOpen, setTablespaceModalOpen] = useState(false)
@@ -88,12 +156,10 @@ function Permissions() {
 
   const fetchDatabases = async () => {
     try {
-      const response = await permissionsApi.getUserPermissions('root', '%')
-      // Extract unique databases from permissions
-      const uniqueDbs = Array.from(new Set(response.data.map((p) => p.database)))
-      setDatabases(uniqueDbs.length > 0 ? uniqueDbs : ['mysql', 'test'])
+      const response = await tablesApi.getDatabases()
+      setDatabases(response.data)
     } catch {
-      setDatabases(['mysql', 'test'])
+      setDatabases([])
     }
   }
 
@@ -127,9 +193,19 @@ function Permissions() {
     fetchPermissions(value)
   }
 
-  const handleGrant = async (values: GrantPermissionRequest) => {
+  const handleGrant = async (values: GrantPermissionRequest & { grantType?: string }) => {
     try {
-      await permissionsApi.grant(values)
+      const isSystemGrant = dbType?.toUpperCase() === 'ORACLE' && values.grantType === 'system'
+
+      const request: GrantPermissionRequest = {
+        username: values.username,
+        host: values.host,
+        database: isSystemGrant ? '' : values.database,
+        table: isSystemGrant ? '*' : (values.table || '*'),
+        privileges: values.privileges,
+      }
+
+      await permissionsApi.grant(request)
       message.success('Permissions granted successfully')
       setGrantModalOpen(false)
       form.resetFields()
@@ -160,9 +236,9 @@ function Permissions() {
     }
   }
 
-  const handlePresetSelect = (preset: keyof typeof PRIVILEGE_PRESETS) => {
+  const handlePresetSelect = (preset: 'readOnly' | 'readWrite' | 'ddl' | 'all') => {
     form.setFieldsValue({
-      privileges: PRIVILEGE_PRESETS[preset],
+      privileges: privilegePresets[preset],
     })
   }
 
@@ -419,6 +495,7 @@ function Permissions() {
             username: selectedAccount?.split('@')[0],
             host: selectedAccount?.split('@')[1] || '%',
             table: '*',
+            grantType: 'object',
           }}
         >
           <Row gutter={16}>
@@ -438,62 +515,179 @@ function Permissions() {
             </Col>
           </Row>
 
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="database"
-                label="Database"
-                rules={[{ required: true, message: 'Please select a database' }]}
+          {/* Grant Type Selector (Oracle only) */}
+          {dbType?.toUpperCase() === 'ORACLE' && (
+            <Form.Item name="grantType" label="Grant Type">
+              <Select
+                onChange={() => form.setFieldsValue({ privileges: [] })}
               >
-                <Select placeholder="Select database">
-                  {databases.map((db) => (
-                    <Option key={db} value={db}>
-                      {db}
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="table" label="Table">
-                <Input placeholder="* for all tables" />
-              </Form.Item>
-            </Col>
-          </Row>
+                <Option value="object">Object Privileges (on specific objects)</Option>
+                <Option value="system">System Privileges (CREATE SESSION, etc.)</Option>
+              </Select>
+            </Form.Item>
+          )}
 
-          <Form.Item label="Quick Presets">
-            <Space>
-              <Button size="small" onClick={() => handlePresetSelect('readOnly')}>
-                Read Only
-              </Button>
-              <Button size="small" onClick={() => handlePresetSelect('readWrite')}>
-                Read/Write
-              </Button>
-              <Button size="small" onClick={() => handlePresetSelect('ddl')}>
-                DDL
-              </Button>
-              <Button size="small" onClick={() => handlePresetSelect('all')}>
-                All
-              </Button>
-            </Space>
+          {/* Database/Table fields - only for object grants */}
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.grantType !== currentValues.grantType
+            }
+          >
+            {({ getFieldValue }) => {
+              const grantType = getFieldValue('grantType')
+              const isSystemGrant = dbType?.toUpperCase() === 'ORACLE' && grantType === 'system'
+
+              if (isSystemGrant) {
+                return null
+              }
+
+              return (
+                <Row gutter={16}>
+                  <Col span={12}>
+                    <Form.Item
+                      name="database"
+                      label="Database"
+                      rules={[{ required: true, message: 'Please select a database' }]}
+                    >
+                      <Select
+                        placeholder="Select database"
+                        showSearch
+                        filterOption={(input, option) =>
+                          (option?.value as string)?.toLowerCase().includes(input.toLowerCase())
+                        }
+                      >
+                        {databases.map((db) => (
+                          <Option key={db.name} value={db.name}>
+                            {db.name} ({db.tableCount} tables)
+                          </Option>
+                        ))}
+                      </Select>
+                    </Form.Item>
+                  </Col>
+                  <Col span={12}>
+                    <Form.Item name="table" label="Table">
+                      <Input placeholder="* for all tables" />
+                    </Form.Item>
+                  </Col>
+                </Row>
+              )
+            }}
           </Form.Item>
 
+          {/* Quick Presets - only for object grants */}
           <Form.Item
-            name="privileges"
-            label="Privileges"
-            rules={[
-              { required: true, message: 'Please select at least one privilege' },
-            ]}
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.grantType !== currentValues.grantType
+            }
           >
-            <Checkbox.Group>
-              <Row>
-                {AVAILABLE_PRIVILEGES.map((priv) => (
-                  <Col span={8} key={priv}>
-                    <Checkbox value={priv}>{priv}</Checkbox>
-                  </Col>
-                ))}
-              </Row>
-            </Checkbox.Group>
+            {({ getFieldValue }) => {
+              const grantType = getFieldValue('grantType')
+              const isSystemGrant = dbType?.toUpperCase() === 'ORACLE' && grantType === 'system'
+
+              if (isSystemGrant) {
+                return (
+                  <Form.Item label="Quick Presets">
+                    <Space>
+                      <Button
+                        size="small"
+                        onClick={() => form.setFieldsValue({ privileges: ['CREATE SESSION'] })}
+                      >
+                        Login Only
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() =>
+                          form.setFieldsValue({
+                            privileges: ['CREATE SESSION', 'CREATE TABLE', 'CREATE VIEW'],
+                          })
+                        }
+                      >
+                        Developer
+                      </Button>
+                      <Button
+                        size="small"
+                        onClick={() => form.setFieldsValue({ privileges: availableSystemPrivileges })}
+                      >
+                        All System
+                      </Button>
+                      <Button
+                        size="small"
+                        danger
+                        onClick={() => form.setFieldsValue({ privileges: [] })}
+                      >
+                        Clear All
+                      </Button>
+                    </Space>
+                  </Form.Item>
+                )
+              }
+
+              return (
+                <Form.Item label="Quick Presets">
+                  <Space>
+                    <Button size="small" onClick={() => handlePresetSelect('readOnly')}>
+                      Read Only
+                    </Button>
+                    <Button size="small" onClick={() => handlePresetSelect('readWrite')}>
+                      Read/Write
+                    </Button>
+                    <Button size="small" onClick={() => handlePresetSelect('ddl')}>
+                      DDL
+                    </Button>
+                    <Button size="small" onClick={() => handlePresetSelect('all')}>
+                      All
+                    </Button>
+                    <Button
+                      size="small"
+                      danger
+                      onClick={() => form.setFieldsValue({ privileges: [] })}
+                    >
+                      Clear All
+                    </Button>
+                  </Space>
+                </Form.Item>
+              )
+            }}
+          </Form.Item>
+
+          {/* Privileges Checkboxes */}
+          <Form.Item
+            noStyle
+            shouldUpdate={(prevValues, currentValues) =>
+              prevValues.grantType !== currentValues.grantType
+            }
+          >
+            {({ getFieldValue }) => {
+              const grantType = getFieldValue('grantType')
+              const isSystemGrant = dbType?.toUpperCase() === 'ORACLE' && grantType === 'system'
+              const privileges = isSystemGrant ? availableSystemPrivileges : availablePrivileges
+
+              return (
+                <Form.Item
+                  name="privileges"
+                  label={
+                    isSystemGrant
+                      ? 'System Privileges (Oracle)'
+                      : `Object Privileges (${dbType || 'MySQL'})`
+                  }
+                  rules={[
+                    { required: true, message: 'Please select at least one privilege' },
+                  ]}
+                >
+                  <Checkbox.Group>
+                    <Row>
+                      {privileges.map((priv) => (
+                        <Col span={isSystemGrant ? 12 : 8} key={priv}>
+                          <Checkbox value={priv}>{priv}</Checkbox>
+                        </Col>
+                      ))}
+                    </Row>
+                  </Checkbox.Group>
+                </Form.Item>
+              )
+            }}
           </Form.Item>
 
           <Form.Item>

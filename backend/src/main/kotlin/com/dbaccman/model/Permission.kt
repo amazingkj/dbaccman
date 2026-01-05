@@ -15,7 +15,7 @@ data class Permission(
 data class GrantPermissionRequest(
     val username: String,
     val host: String = "%",
-    val database: String,
+    val database: String = "",  // Empty for system privileges
     val table: String = "*",
     val privileges: List<String>
 )
@@ -24,7 +24,7 @@ data class GrantPermissionRequest(
 data class RevokePermissionRequest(
     val username: String,
     val host: String = "%",
-    val database: String,
+    val database: String = "",  // Empty for system privileges
     val table: String = "*",
     val privileges: List<String>
 )

@@ -114,6 +114,12 @@ interface DatabaseDialect {
      */
     fun getSelectWithLimitSql(quotedTable: String, limit: Int): String
 
+    /**
+     * Returns SQL to gather table statistics.
+     * Returns null if the database doesn't support/need explicit statistics gathering.
+     */
+    fun getGatherStatsSql(schema: String, table: String? = null): String? = null
+
     // ==================== Tablespace Queries ====================
 
     fun getTablespacesQuery(): String

@@ -201,6 +201,29 @@ class MySQLDialectTest {
     }
 
     @Test
+    @DisplayName("Grant SQL should support global privileges with empty database")
+    fun testGrantSqlGlobalPrivilegesEmptyDatabase() {
+        val sql = dialect.getGrantSql(listOf("SELECT", "INSERT"), "", "*", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT SELECT, INSERT ON *.*"))
+        assertTrue(sql.contains("TO `testuser`@`localhost`"))
+    }
+
+    @Test
+    @DisplayName("Grant SQL should support global privileges with asterisk database")
+    fun testGrantSqlGlobalPrivilegesAsteriskDatabase() {
+        val sql = dialect.getGrantSql(listOf("SELECT"), "*", "*", "testuser", "localhost")
+        assertTrue(sql.contains("ON *.*"))
+    }
+
+    @Test
+    @DisplayName("Revoke SQL should support global privileges with empty database")
+    fun testRevokeSqlGlobalPrivileges() {
+        val sql = dialect.getRevokeSql(listOf("SELECT", "INSERT"), "", "*", "testuser", "localhost")
+        assertTrue(sql.contains("REVOKE SELECT, INSERT ON *.*"))
+        assertTrue(sql.contains("FROM `testuser`@`localhost`"))
+    }
+
+    @Test
     @DisplayName("Show databases query should use SHOW DATABASES")
     fun testShowDatabasesQuery() {
         assertEquals("SHOW DATABASES", dialect.getShowDatabasesQuery())

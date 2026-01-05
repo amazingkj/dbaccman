@@ -460,7 +460,10 @@ function AdminDashboard() {
                 size="small"
                 dataSource={stats.topDatabases}
                 renderItem={(item) => (
-                  <List.Item style={{ padding: '8px 0' }}>
+                  <List.Item
+                    style={{ padding: '8px 0', cursor: 'pointer' }}
+                    onClick={() => navigate(`/tables?db=${encodeURIComponent(item.name)}`)}
+                  >
                     <Space>
                       <DatabaseOutlined style={{ color: '#1890ff' }} />
                       <Text ellipsis style={{ maxWidth: 150 }}>{item.name}</Text>

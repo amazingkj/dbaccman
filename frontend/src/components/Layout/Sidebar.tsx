@@ -69,7 +69,7 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
         {
           key: '/dashboard',
           icon: <DashboardOutlined />,
-          label: 'My Account',
+          label: 'Dashboard',
         },
       ]
 
@@ -104,7 +104,7 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
       >
         <div
           style={{
-            height: 48,
+            height: collapsed ? 48 : 64,
             margin: '12px 12px 20px',
             background: 'transparent',
             borderRadius: 8,
@@ -113,8 +113,6 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
             justifyContent: 'center',
             gap: 8,
             color: '#fff',
-            fontWeight: 700,
-            fontSize: collapsed ? 14 : 18,
             cursor: 'pointer',
             transition: 'all 0.2s',
             fontFamily: "'Plus Jakarta Sans', sans-serif",
@@ -122,7 +120,14 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           onClick={() => navigate('/dashboard')}
         >
           <DatabaseOutlined style={{ fontSize: 22, color: '#5d87ff' }} />
-          {!collapsed && 'D-BAM'}
+          {!collapsed && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+              <span style={{ fontWeight: 700, fontSize: 18, lineHeight: 1.2 }}>DONUT</span>
+              <span style={{ fontWeight: 300, fontSize: 9, color: 'rgba(255,255,255,0.6)', letterSpacing: '0.5px' }}>
+                Database Account Manager
+              </span>
+            </div>
+          )}
         </div>
         <Menu
           theme="dark"

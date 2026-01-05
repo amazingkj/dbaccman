@@ -154,6 +154,12 @@ body {
   white-space: nowrap;
 }
 
+/* Exclude selection checkbox column from ellipsis */
+.ant-table-cell.ant-table-selection-column {
+  overflow: visible;
+  text-overflow: clip;
+}
+
 /* Modal Styling */
 .ant-modal-content {
   border-radius: 12px;

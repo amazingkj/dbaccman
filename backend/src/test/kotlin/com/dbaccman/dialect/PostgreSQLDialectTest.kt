@@ -115,12 +115,13 @@ class PostgreSQLDialectTest {
     }
 
     @Test
-    @DisplayName("Password expire SQL should use VALID UNTIL")
+    @DisplayName("Password expire SQL should use VALID UNTIL with date")
     fun testPasswordExpireSql() {
         val sql = dialect.getAlterUserPasswordExpireSql("testuser", "localhost", 90)
         assertTrue(sql.contains("ALTER USER"))
         assertTrue(sql.contains("VALID UNTIL"))
-        assertTrue(sql.contains("90 days"))
+        // Now uses computed date string like '2026-04-05 12:00:00'
+        assertTrue(sql.matches(Regex(".*VALID UNTIL '\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}'.*")))
     }
 
     @Test
@@ -194,6 +195,45 @@ class PostgreSQLDialectTest {
         val sql = dialect.getRevokeSql(listOf("DELETE"), "public", "*", "testuser", "localhost")
         assertTrue(sql.contains("REVOKE DELETE"))
         assertTrue(sql.contains("FROM \"testuser\""))
+    }
+
+    @Test
+    @DisplayName("Grant SQL should support CONNECT database privilege")
+    fun testGrantSqlConnectPrivilege() {
+        val sql = dialect.getGrantSql(listOf("CONNECT"), "testdb", "*", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT CONNECT ON DATABASE"))
+        assertTrue(sql.contains("TO \"testuser\""))
+    }
+
+    @Test
+    @DisplayName("Grant SQL should support multiple database privileges")
+    fun testGrantSqlMultipleDatabasePrivileges() {
+        val sql = dialect.getGrantSql(listOf("CONNECT", "CREATE", "TEMPORARY"), "testdb", "*", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT CONNECT, CREATE, TEMPORARY ON DATABASE"))
+    }
+
+    @Test
+    @DisplayName("Grant SQL should handle mixed database and table privileges")
+    fun testGrantSqlMixedPrivileges() {
+        val sql = dialect.getGrantSql(listOf("CONNECT", "SELECT"), "testdb", "*", "testuser", "localhost")
+        // Should contain both database grant and table grant
+        assertTrue(sql.contains("ON DATABASE"))
+        assertTrue(sql.contains("ALL TABLES IN SCHEMA"))
+    }
+
+    @Test
+    @DisplayName("Revoke SQL should support database privileges")
+    fun testRevokeSqlDatabasePrivileges() {
+        val sql = dialect.getRevokeSql(listOf("CONNECT"), "testdb", "*", "testuser", "localhost")
+        assertTrue(sql.contains("REVOKE CONNECT ON DATABASE"))
+        assertTrue(sql.contains("FROM \"testuser\""))
+    }
+
+    @Test
+    @DisplayName("Grant SQL should use public schema for empty database on table privileges")
+    fun testGrantSqlEmptyDatabaseUsesPublicSchema() {
+        val sql = dialect.getGrantSql(listOf("SELECT"), "", "*", "testuser", "localhost")
+        assertTrue(sql.contains("ALL TABLES IN SCHEMA \"public\""))
     }
 
     @Test

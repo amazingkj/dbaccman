@@ -200,20 +200,21 @@ class MySQLDialect : DatabaseDialect {
 
     override fun getGrantSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
         val privList = privileges.joinToString(", ")
-        val target = if (table == "*") {
-            "${quoteIdentifier(database)}.*"
-        } else {
-            "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
+        // Handle global privileges (empty database = *.*)
+        val target = when {
+            database.isEmpty() || database == "*" -> "*.*"  // Global privileges
+            table == "*" -> "${quoteIdentifier(database)}.*"  // Database-level privileges
+            else -> "${quoteIdentifier(database)}.${quoteIdentifier(table)}"  // Table-level privileges
         }
         return "GRANT $privList ON $target TO ${quoteIdentifier(username)}@${quoteIdentifier(host)}"
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
         val privList = privileges.joinToString(", ")
-        val target = if (table == "*") {
-            "${quoteIdentifier(database)}.*"
-        } else {
-            "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
+        val target = when {
+            database.isEmpty() || database == "*" -> "*.*"  // Global privileges
+            table == "*" -> "${quoteIdentifier(database)}.*"  // Database-level privileges
+            else -> "${quoteIdentifier(database)}.${quoteIdentifier(table)}"  // Table-level privileges
         }
         return "REVOKE $privList ON $target FROM ${quoteIdentifier(username)}@${quoteIdentifier(host)}"
     }
@@ -229,7 +230,7 @@ class MySQLDialect : DatabaseDialect {
             s.schema_name as name,
             COUNT(t.table_name) as table_count,
             IFNULL(SUM(t.table_rows), 0) as total_rows,
-            IFNULL(SUM(t.data_length + t.index_length), 0) as size
+            IFNULL(SUM(t.data_length + t.index_length), 0) as total_size
         FROM information_schema.schemata s
         LEFT JOIN information_schema.tables t
             ON s.schema_name = t.table_schema
@@ -242,8 +243,8 @@ class MySQLDialect : DatabaseDialect {
         SELECT
             table_name as name,
             engine,
-            IFNULL(table_rows, 0) as `rows`,
-            IFNULL(data_length + index_length, 0) as size,
+            IFNULL(table_rows, 0) as row_count,
+            IFNULL(data_length + index_length, 0) as table_size,
             DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') as create_time
         FROM information_schema.tables
         WHERE table_schema = ?
@@ -358,6 +359,20 @@ class MySQLDialect : DatabaseDialect {
             END as days_until_expiry
         FROM mysql.user
         WHERE user = ? AND host = ?
+    """.trimIndent()
+
+    /**
+     * Returns password expiry query for regular users (using session status).
+     * Limited info available without mysql.user access.
+     */
+    fun getMyPasswordExpiryQuery(): String = """
+        SELECT
+            SUBSTRING_INDEX(CURRENT_USER(), '@', 1) as user,
+            SUBSTRING_INDEX(CURRENT_USER(), '@', -1) as host,
+            NULL as password_lifetime,
+            NULL as password_last_changed,
+            false as is_expired,
+            NULL as days_until_expiry
     """.trimIndent()
 
     override fun getPasswordExpiryDaysQuery(): String = """

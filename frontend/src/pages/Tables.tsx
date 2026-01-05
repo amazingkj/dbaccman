@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Typography,
   Table,
@@ -23,6 +24,7 @@ import {
   EyeOutlined,
   HddOutlined,
   OrderedListOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons'
 import { tablesApi, type TableDataResult, type ColumnInfo } from '../api/tables'
 import type { DatabaseInfo, TableInfo, IndexInfo } from '../types'
@@ -117,6 +119,7 @@ function StatCard({ title, value, style }: StatCardProps) {
 }
 
 function Tables() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [databases, setDatabases] = useState<DatabaseInfo[]>([])
   const [selectedDb, setSelectedDb] = useState<string | null>(null)
   const [tables, setTables] = useState<TableInfo[]>([])
@@ -128,10 +131,25 @@ function Tables() {
   const [loading, setLoading] = useState(false)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
+  const [gatheringStats, setGatheringStats] = useState(false)
 
   useEffect(() => {
     fetchDatabases()
   }, [])
+
+  // Handle URL parameter for database selection
+  useEffect(() => {
+    const dbFromUrl = searchParams.get('db')
+    if (dbFromUrl && databases.length > 0) {
+      const dbExists = databases.some(db => db.name === dbFromUrl)
+      if (dbExists && selectedDb !== dbFromUrl) {
+        setSelectedDb(dbFromUrl)
+        fetchTables(dbFromUrl)
+        // Clear the URL parameter after applying
+        setSearchParams({})
+      }
+    }
+  }, [databases, searchParams])
 
   const fetchDatabases = async () => {
     try {
@@ -189,6 +207,22 @@ function Tables() {
     setSelectedDb(value)
     setSelectedTable(null)
     fetchTables(value)
+  }
+
+  const handleGatherStats = async () => {
+    if (!selectedDb) return
+    setGatheringStats(true)
+    try {
+      await tablesApi.gatherStats(selectedDb)
+      message.success('Statistics gathered successfully')
+      // Refresh data after gathering stats
+      await fetchDatabases()
+      await fetchTables(selectedDb)
+    } catch {
+      message.error('Failed to gather statistics')
+    } finally {
+      setGatheringStats(false)
+    }
   }
 
   const formatSize = (bytes: number): string => {
@@ -419,6 +453,15 @@ function Tables() {
                 disabled={!selectedDb}
               >
                 Refresh
+              </Button>
+              <Button
+                icon={<BarChartOutlined />}
+                onClick={handleGatherStats}
+                disabled={!selectedDb}
+                loading={gatheringStats}
+                title="Rows 값을 보려면 통계 수집이 필요합니다 (Oracle)"
+              >
+                Gather Stats
               </Button>
             </Space>
           </Col>

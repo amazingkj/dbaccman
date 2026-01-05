@@ -1,5 +1,8 @@
 package com.dbaccman.dialect
 
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+
 /**
  * PostgreSQL-specific implementation of DatabaseDialect.
  * Supports PostgreSQL 12+ features.
@@ -117,7 +120,9 @@ class PostgreSQLDialect : DatabaseDialect {
     }
 
     override fun getAlterUserPasswordExpireSql(username: String, host: String, expireDays: Int): String {
-        return "ALTER USER ${quoteIdentifier(username)} VALID UNTIL CURRENT_DATE + INTERVAL '$expireDays days'"
+        val expireDate = LocalDateTime.now().plusDays(expireDays.toLong())
+        val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+        return "ALTER USER ${quoteIdentifier(username)} VALID UNTIL '${expireDate.format(formatter)}'"
     }
 
     override fun getAlterUserPasswordSql(username: String, host: String, newPassword: String): String {
@@ -188,24 +193,64 @@ class PostgreSQLDialect : DatabaseDialect {
         WHERE grantee = ?
     """.trimIndent()
 
+    // PostgreSQL database-level privileges (CONNECT, CREATE, TEMPORARY)
+    private val databasePrivileges = setOf("CONNECT", "CREATE", "TEMPORARY", "TEMP")
+
     override fun getGrantSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
-        val privList = privileges.joinToString(", ")
-        val target = if (table == "*") {
-            "ALL TABLES IN SCHEMA ${quoteIdentifier(database)}"
-        } else {
-            "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
+        // Separate database-level privileges from table-level privileges
+        val dbPrivs = privileges.filter { it.uppercase() in databasePrivileges }
+        val tablePrivs = privileges.filterNot { it.uppercase() in databasePrivileges }
+
+        val statements = mutableListOf<String>()
+
+        // Handle database-level privileges (CONNECT, CREATE, TEMPORARY)
+        if (dbPrivs.isNotEmpty()) {
+            val privList = dbPrivs.joinToString(", ") { it.uppercase() }
+            // If database is empty, use current database
+            val dbName = if (database.isEmpty()) "CURRENT_DATABASE()" else quoteIdentifier(database)
+            statements.add("GRANT $privList ON DATABASE $dbName TO ${quoteIdentifier(username)}")
         }
-        return "GRANT $privList ON $target TO ${quoteIdentifier(username)}"
+
+        // Handle table-level privileges
+        if (tablePrivs.isNotEmpty()) {
+            val privList = tablePrivs.joinToString(", ")
+            val target = if (table == "*") {
+                "ALL TABLES IN SCHEMA ${quoteIdentifier(database.ifEmpty { "public" })}"
+            } else {
+                "${quoteIdentifier(database.ifEmpty { "public" })}.${quoteIdentifier(table)}"
+            }
+            statements.add("GRANT $privList ON $target TO ${quoteIdentifier(username)}")
+        }
+
+        return statements.joinToString("; ")
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
-        val privList = privileges.joinToString(", ")
-        val target = if (table == "*") {
-            "ALL TABLES IN SCHEMA ${quoteIdentifier(database)}"
-        } else {
-            "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
+        // Separate database-level privileges from table-level privileges
+        val dbPrivs = privileges.filter { it.uppercase() in databasePrivileges }
+        val tablePrivs = privileges.filterNot { it.uppercase() in databasePrivileges }
+
+        val statements = mutableListOf<String>()
+
+        // Handle database-level privileges
+        if (dbPrivs.isNotEmpty()) {
+            val privList = dbPrivs.joinToString(", ") { it.uppercase() }
+            val dbName = if (database.isEmpty()) "CURRENT_DATABASE()" else quoteIdentifier(database)
+            statements.add("REVOKE $privList ON DATABASE $dbName FROM ${quoteIdentifier(username)}")
         }
-        return "REVOKE $privList ON $target FROM ${quoteIdentifier(username)}"
+
+        // Handle table-level privileges
+        if (tablePrivs.isNotEmpty()) {
+            val privList = tablePrivs.joinToString(", ")
+            val target = if (table == "*") {
+                "ALL TABLES IN SCHEMA ${quoteIdentifier(database.ifEmpty { "public" })}"
+            } else {
+                "${quoteIdentifier(database.ifEmpty { "public" })}.${quoteIdentifier(table)}"
+            }
+            statements.add("REVOKE $privList ON $target FROM ${quoteIdentifier(username)}")
+        }
+
+        return statements.joinToString("; ")
     }
 
     override fun getShowDatabasesQuery(): String = """
@@ -223,7 +268,7 @@ class PostgreSQLDialect : DatabaseDialect {
             s.schema_name as name,
             COALESCE(t.table_count, 0)::int as table_count,
             COALESCE(t.total_rows, 0)::bigint as total_rows,
-            COALESCE(t.total_size, 0)::bigint as "size"
+            COALESCE(t.total_size, 0)::bigint as total_size
         FROM information_schema.schemata s
         LEFT JOIN (
             SELECT
@@ -242,8 +287,14 @@ class PostgreSQLDialect : DatabaseDialect {
         SELECT
             table_name as name,
             'PostgreSQL' as engine,
-            COALESCE((SELECT reltuples::bigint FROM pg_class WHERE relname = t.table_name), 0) as "rows",
-            COALESCE(pg_total_relation_size(quote_ident(t.table_schema) || '.' || quote_ident(t.table_name)), 0) as "size",
+            COALESCE(
+                (SELECT GREATEST(c.reltuples, 0)::bigint
+                 FROM pg_class c
+                 JOIN pg_namespace n ON c.relnamespace = n.oid
+                 WHERE c.relname = t.table_name AND n.nspname = t.table_schema),
+                0
+            ) as row_count,
+            COALESCE(pg_total_relation_size(quote_ident(t.table_schema) || '.' || quote_ident(t.table_name)), 0) as table_size,
             '' as create_time
         FROM information_schema.tables t
         WHERE table_schema = ?

@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import MainLayout from './components/Layout/MainLayout'
 import ProtectedRoute from './components/common/ProtectedRoute'
+import AdminRoute from './components/common/AdminRoute'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Accounts from './pages/Accounts'
@@ -24,12 +25,13 @@ function App() {
       >
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<Dashboard />} />
-        <Route path="accounts" element={<Accounts />} />
-        <Route path="permissions" element={<Permissions />} />
-        <Route path="sessions" element={<Sessions />} />
-        <Route path="tables" element={<Tables />} />
-        <Route path="tablespaces" element={<Tablespaces />} />
-        <Route path="sql-console" element={<SqlConsole />} />
+        {/* Admin-only routes */}
+        <Route path="accounts" element={<AdminRoute><Accounts /></AdminRoute>} />
+        <Route path="permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
+        <Route path="sessions" element={<AdminRoute><Sessions /></AdminRoute>} />
+        <Route path="tables" element={<AdminRoute><Tables /></AdminRoute>} />
+        <Route path="tablespaces" element={<AdminRoute><Tablespaces /></AdminRoute>} />
+        <Route path="sql-console" element={<AdminRoute><SqlConsole /></AdminRoute>} />
       </Route>
     </Routes>
   )

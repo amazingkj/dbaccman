@@ -141,6 +141,8 @@ function Tablespaces() {
   const [selectedDatabase, setSelectedDatabase] = useState<string>('')
   const [searchText, setSearchText] = useState('')
   const [searchColumn, setSearchColumn] = useState<string>('all')
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
   const [form] = Form.useForm()
   const [moveForm] = Form.useForm()
 
@@ -224,6 +226,64 @@ function Tablespaces() {
     }
   }
 
+  // System tablespaces that should not be deleted
+  const systemTablespaces = [
+    'mysql', 'innodb_system', 'innodb_temporary', 'sys',
+    'SYSTEM', 'SYSAUX', 'UNDOTBS1', 'TEMP', 'USERS',
+    'pg_default', 'pg_global'
+  ]
+
+  const isSystemTablespace = (ts: TablespaceInfo) => {
+    return systemTablespaces.includes(ts.name) ||
+           ts.spaceType?.toLowerCase() === 'system' ||
+           ts.spaceType?.toLowerCase() === 'undo'
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('No tablespaces selected')
+      return
+    }
+
+    setBulkDeleting(true)
+    let success = 0
+    let failed = 0
+    const errors: string[] = []
+
+    for (const key of selectedRowKeys) {
+      const name = key.toString()
+      const ts = tablespaces.find(t => t.name === name)
+      if (!ts || isSystemTablespace(ts)) {
+        failed++
+        errors.push(`${name}: System tablespace cannot be deleted`)
+        continue
+      }
+
+      try {
+        await tablespacesApi.delete(name)
+        success++
+        if (selectedTablespace?.name === name) {
+          setSelectedTablespace(null)
+          setTablesInTablespace([])
+        }
+      } catch (error: unknown) {
+        failed++
+        const err = error as { response?: { data?: { error?: string } } }
+        errors.push(`${name}: ${err.response?.data?.error || 'Failed to delete'}`)
+      }
+    }
+
+    if (failed > 0) {
+      message.warning(`Deleted ${success} tablespace(s), ${failed} failed`)
+    } else {
+      message.success(`Successfully deleted ${success} tablespace(s)`)
+    }
+
+    setSelectedRowKeys([])
+    setBulkDeleting(false)
+    fetchTablespaces()
+  }
+
   const handleMoveTable = async (values: { database: string; tableName: string }) => {
     if (!selectedTablespace) return
     try {
@@ -268,6 +328,13 @@ function Tablespaces() {
   const filteredTablespaces = tablespaces.filter(filterBySearch)
 
   const columns = [
+    {
+      title: 'No.',
+      key: 'no',
+      width: 45,
+      align: 'center' as const,
+      render: (_: unknown, __: TablespaceInfo, index: number) => index + 1,
+    },
     {
       title: 'Name',
       dataIndex: 'name',
@@ -337,15 +404,7 @@ function Tablespaces() {
       key: 'actions',
       width: 100,
       render: (_: unknown, record: TablespaceInfo) => {
-        // System tablespaces that should not be deleted
-        const systemTablespaces = [
-          'mysql', 'innodb_system', 'innodb_temporary', 'sys',
-          'SYSTEM', 'SYSAUX', 'UNDOTBS1', 'TEMP', 'USERS',
-          'pg_default', 'pg_global'
-        ]
-        const isSystem = systemTablespaces.includes(record.name) ||
-                         record.spaceType?.toLowerCase() === 'system' ||
-                         record.spaceType?.toLowerCase() === 'undo'
+        const isSystem = isSystemTablespace(record)
 
         return (
           <Space>
@@ -455,6 +514,23 @@ function Tablespaces() {
             <Button icon={<ReloadOutlined />} onClick={fetchTablespaces}>
               Refresh
             </Button>
+            {selectedRowKeys.length > 0 && (
+              <Popconfirm
+                title="Delete Selected Tablespaces"
+                description={`Are you sure you want to delete ${selectedRowKeys.length} tablespace(s)?`}
+                onConfirm={handleBulkDelete}
+                okText="Yes"
+                cancelText="No"
+              >
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  loading={bulkDeleting}
+                >
+                  Delete ({selectedRowKeys.length})
+                </Button>
+              </Popconfirm>
+            )}
           </Space>
         </Col>
         <Col flex="auto" style={{ textAlign: 'right' }}>
@@ -488,6 +564,13 @@ function Tablespaces() {
         rowKey="name"
         pagination={{ pageSize: 10 }}
         style={{ marginBottom: 24 }}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: setSelectedRowKeys,
+          getCheckboxProps: (record) => ({
+            disabled: isSystemTablespace(record),
+          }),
+        }}
         rowClassName={(record) =>
           selectedTablespace?.name === record.name ? 'ant-table-row-selected' : ''
         }

@@ -66,15 +66,21 @@ class PermissionService {
             )
 
             // DCL statement - use createStatement
+            // Handle multiple statements separated by semicolons
             conn.createStatement().use { stmt ->
-                stmt.execute(sql)
+                sql.split(";").map { it.trim() }.filter { it.isNotEmpty() }.forEach { singleSql ->
+                    stmt.execute(singleSql)
+                }
             }
 
             dialect.getFlushPrivilegesSql()?.let { flushSql ->
                 conn.createStatement().execute(flushSql)
             }
 
-            val target = if (request.table == "*") {
+            // Build target string - handle system privileges (empty database)
+            val target = if (request.database.isEmpty()) {
+                "SYSTEM PRIVILEGES"
+            } else if (request.table == "*") {
                 "${request.database}.*"
             } else {
                 "${request.database}.${request.table}"
@@ -150,15 +156,21 @@ class PermissionService {
             )
 
             // DCL statement - use createStatement
+            // Handle multiple statements separated by semicolons
             conn.createStatement().use { stmt ->
-                stmt.execute(sql)
+                sql.split(";").map { it.trim() }.filter { it.isNotEmpty() }.forEach { singleSql ->
+                    stmt.execute(singleSql)
+                }
             }
 
             dialect.getFlushPrivilegesSql()?.let { flushSql ->
                 conn.createStatement().execute(flushSql)
             }
 
-            val target = if (request.table == "*") {
+            // Build target string - handle system privileges (empty database)
+            val target = if (request.database.isEmpty()) {
+                "SYSTEM PRIVILEGES"
+            } else if (request.table == "*") {
                 "${request.database}.*"
             } else {
                 "${request.database}.${request.table}"

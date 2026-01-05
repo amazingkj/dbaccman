@@ -192,16 +192,30 @@ function Login() {
                 color: '#2a3547',
               }}
             >
-              D-BAM
+              DONUT
             </Title>
             <Text style={{ color: '#5a6a85' }}>Database Account Manager</Text>
           </div>
 
           {loginError && (
             <Alert
-              message="Connection Failed"
-              description={loginError}
-              type="error"
+              message={
+                loginError.toLowerCase().includes('expired') ? 'Password Expired' :
+                loginError.toLowerCase().includes('locked') ? 'Account Locked' :
+                'Connection Failed'
+              }
+              description={
+                loginError.toLowerCase().includes('expired')
+                  ? 'Your password has expired. Please contact your DBA to reset your password, or use SQL*Plus with "ALTER USER username IDENTIFIED BY newpassword".'
+                  : loginError.toLowerCase().includes('locked')
+                  ? 'Your account has been locked due to too many failed login attempts. Please contact your DBA to unlock your account.'
+                  : loginError
+              }
+              type={
+                loginError.toLowerCase().includes('expired') ? 'warning' :
+                loginError.toLowerCase().includes('locked') ? 'warning' :
+                'error'
+              }
               showIcon
               closable
               onClose={() => setLoginError(null)}

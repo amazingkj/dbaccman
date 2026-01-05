@@ -73,6 +73,17 @@ fun Route.tableRoutes() {
                     call.respond(data)
                 }
             }
+
+            post("/{database}/gather-stats") {
+                call.handleAdminRoute(logger, "Failed to gather statistics") {
+                    val sessionId = call.getSessionId()
+                    val database = call.parameters["database"]
+                        ?: throw IllegalArgumentException("Database not specified")
+                    val table = call.request.queryParameters["table"]
+                    val success = tableService.gatherStats(sessionId, database, table)
+                    call.respond(mapOf("success" to success))
+                }
+            }
         }
 
     }

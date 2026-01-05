@@ -37,8 +37,53 @@ import {
   ClockCircleOutlined,
 } from '@ant-design/icons'
 import { accountsApi } from '../api/accounts'
+import { permissionsApi } from '../api/permissions'
 import { formatToLocalTime } from '../utils/dateUtils'
+import { useAuthStore } from '../store/authStore'
 import type { Account, CreateAccountRequest, ExpiringAccount, CloneAccountRequest, BatchOperationResult, PaginationInfo, AccountStats } from '../types'
+
+// Oracle system privileges for account creation
+const ORACLE_SYSTEM_PRIVILEGES = [
+  { value: 'CREATE SESSION', label: 'CREATE SESSION (Login)', description: 'Required to connect to database' },
+  { value: 'CREATE TABLE', label: 'CREATE TABLE', description: 'Create tables in own schema' },
+  { value: 'CREATE VIEW', label: 'CREATE VIEW', description: 'Create views in own schema' },
+  { value: 'CREATE PROCEDURE', label: 'CREATE PROCEDURE', description: 'Create stored procedures' },
+  { value: 'CREATE SEQUENCE', label: 'CREATE SEQUENCE', description: 'Create sequences' },
+  { value: 'UNLIMITED TABLESPACE', label: 'UNLIMITED TABLESPACE', description: 'Use unlimited storage' },
+]
+
+// MySQL global privileges for account creation
+const MYSQL_GLOBAL_PRIVILEGES = [
+  { value: 'SELECT', label: 'SELECT', description: 'Read data from tables' },
+  { value: 'INSERT', label: 'INSERT', description: 'Insert data into tables' },
+  { value: 'UPDATE', label: 'UPDATE', description: 'Modify existing data' },
+  { value: 'DELETE', label: 'DELETE', description: 'Delete data from tables' },
+  { value: 'CREATE', label: 'CREATE', description: 'Create databases and tables' },
+  { value: 'DROP', label: 'DROP', description: 'Drop databases and tables' },
+  { value: 'INDEX', label: 'INDEX', description: 'Create and drop indexes' },
+  { value: 'ALTER', label: 'ALTER', description: 'Alter table structure' },
+]
+
+// PostgreSQL privileges for account creation
+const POSTGRESQL_PRIVILEGES = [
+  { value: 'CONNECT', label: 'CONNECT', description: 'Connect to database' },
+  { value: 'CREATE', label: 'CREATE', description: 'Create new schemas/objects' },
+  { value: 'TEMPORARY', label: 'TEMPORARY', description: 'Create temporary tables' },
+]
+
+// Get privileges based on database type
+const getPrivilegesForDbType = (dbType: string | undefined) => {
+  switch (dbType?.toUpperCase()) {
+    case 'ORACLE':
+      return { privileges: ORACLE_SYSTEM_PRIVILEGES, defaults: ['CREATE SESSION'] }
+    case 'MYSQL':
+      return { privileges: MYSQL_GLOBAL_PRIVILEGES, defaults: [] }
+    case 'POSTGRESQL':
+      return { privileges: POSTGRESQL_PRIVILEGES, defaults: ['CONNECT'] }
+    default:
+      return { privileges: [], defaults: [] }
+  }
+}
 
 const { Title, Text } = Typography
 
@@ -143,6 +188,11 @@ const isOracleSystemUser = (username: string): boolean => {
 }
 
 function Accounts() {
+  const { user } = useAuthStore()
+  const dbType = user?.dbType
+  const { privileges: dbPrivileges, defaults: defaultPrivileges } = getPrivilegesForDbType(dbType)
+  const hasPrivilegeOptions = dbPrivileges.length > 0
+
   const [accounts, setAccounts] = useState<Account[]>([])
   const [expiringAccounts, setExpiringAccounts] = useState<ExpiringAccount[]>([])
   const [loading, setLoading] = useState(false)
@@ -194,10 +244,34 @@ function Accounts() {
     fetchAccounts(1, pagination.pageSize)
   }, [])
 
-  const handleCreate = async (values: CreateAccountRequest) => {
+  const handleCreate = async (values: CreateAccountRequest & { privileges?: string[] }) => {
     try {
-      await accountsApi.create(values)
-      message.success('Account created successfully')
+      // First create the account
+      await accountsApi.create({
+        username: values.username,
+        host: values.host,
+        password: values.password,
+        expireDays: values.expireDays,
+      })
+
+      // Then grant privileges if selected (for Oracle)
+      if (values.privileges && values.privileges.length > 0) {
+        try {
+          await permissionsApi.grant({
+            username: values.username,
+            host: values.host || '%',
+            database: '',  // Empty for system privileges
+            table: '*',
+            privileges: values.privileges,
+          })
+          message.success(`Account created with ${values.privileges.length} privilege(s)`)
+        } catch {
+          message.warning('Account created but failed to grant some privileges')
+        }
+      } else {
+        message.success('Account created successfully')
+      }
+
       setCreateModalOpen(false)
       form.resetFields()
       fetchAccounts(1, pagination.pageSize) // Go to first page after create
@@ -320,17 +394,54 @@ function Accounts() {
   // Export handler
   const handleExport = async (includePermissions: boolean) => {
     try {
-      const response = await accountsApi.exportCsv(includePermissions)
-      const blob = new Blob([response.data], { type: 'text/csv' })
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = includePermissions ? 'accounts_with_permissions.csv' : 'accounts.csv'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-      message.success('Export completed')
+      // If accounts are selected, export only selected ones (client-side)
+      if (selectedRowKeys.length > 0) {
+        const selectedAccounts = accounts.filter(account =>
+          selectedRowKeys.includes(`${account.username}@${account.host}`)
+        )
+
+        // Generate CSV
+        const headers = includePermissions
+          ? ['Username', 'Host', 'Status', 'Password Expiry', 'Last Password Change']
+          : ['Username', 'Host', 'Status', 'Password Expiry', 'Last Password Change']
+
+        const rows = selectedAccounts.map(account => [
+          account.username,
+          account.host,
+          account.accountLocked ? 'Locked' : 'Active',
+          account.passwordLifetime ? `${account.passwordLifetime} days` : 'Never',
+          account.passwordLastChanged || '-'
+        ])
+
+        const csvContent = [
+          headers.join(','),
+          ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
+        ].join('\n')
+
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = includePermissions ? 'selected_accounts_with_permissions.csv' : 'selected_accounts.csv'
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        message.success(`Exported ${selectedAccounts.length} selected account(s)`)
+      } else {
+        // No selection - export all from backend
+        const response = await accountsApi.exportCsv(includePermissions)
+        const blob = new Blob([response.data], { type: 'text/csv' })
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = includePermissions ? 'accounts_with_permissions.csv' : 'accounts.csv'
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+        message.success('Export completed')
+      }
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } }
       const errorMsg = err.response?.data?.error || 'Failed to export accounts'
@@ -383,6 +494,13 @@ function Accounts() {
 
   // Memoize columns to prevent unnecessary re-renders
   const columns = useMemo(() => [
+    {
+      title: 'No.',
+      key: 'no',
+      width: 45,
+      align: 'center' as const,
+      render: (_: unknown, __: Account, index: number) => index + 1,
+    },
     {
       title: 'Username',
       dataIndex: 'username',
@@ -602,7 +720,7 @@ function Accounts() {
               }}
             >
               <Button icon={<DownloadOutlined />}>
-                Export <DownOutlined />
+                Export {selectedRowKeys.length > 0 ? `(${selectedRowKeys.length})` : ''} <DownOutlined />
               </Button>
             </Dropdown>
           </Space>
@@ -665,6 +783,7 @@ function Accounts() {
           form.resetFields()
         }}
         footer={null}
+        width={hasPrivilegeOptions ? 550 : 420}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item
@@ -694,6 +813,32 @@ function Accounts() {
           >
             <InputNumber min={0} max={365} style={{ width: '100%' }} />
           </Form.Item>
+
+          {/* Database-specific Privileges */}
+          {hasPrivilegeOptions && (
+            <Form.Item
+              name="privileges"
+              label={`Grant Privileges (${dbType})`}
+              tooltip="Select privileges to grant to the new account"
+              initialValue={defaultPrivileges}
+            >
+              <Checkbox.Group style={{ width: '100%' }}>
+                <Row>
+                  {dbPrivileges.map((priv) => (
+                    <Col span={24} key={priv.value} style={{ marginBottom: 8 }}>
+                      <Checkbox value={priv.value}>
+                        <span style={{ fontWeight: 500 }}>{priv.label}</span>
+                        <Text type="secondary" style={{ display: 'block', fontSize: 12, marginLeft: 24 }}>
+                          {priv.description}
+                        </Text>
+                      </Checkbox>
+                    </Col>
+                  ))}
+                </Row>
+              </Checkbox.Group>
+            </Form.Item>
+          )}
+
           <Form.Item>
             <Space>
               <Button type="primary" htmlType="submit">

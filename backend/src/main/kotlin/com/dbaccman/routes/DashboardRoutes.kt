@@ -2,7 +2,7 @@ package com.dbaccman.routes
 
 import com.dbaccman.service.DashboardService
 import com.dbaccman.util.getSessionId
-import com.dbaccman.util.handleAdminRoute
+import com.dbaccman.util.handleAuthenticatedRoute
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.response.*
@@ -17,7 +17,7 @@ fun Route.dashboardRoutes() {
     route("/dashboard") {
         authenticate("auth-jwt") {
             get("/stats") {
-                call.handleAdminRoute(logger, "Failed to fetch dashboard stats") {
+                call.handleAuthenticatedRoute(logger, "Failed to fetch dashboard stats") {
                     val sessionId = call.getSessionId()
                     val stats = dashboardService.getDashboardStats(sessionId)
                     call.respond(stats)

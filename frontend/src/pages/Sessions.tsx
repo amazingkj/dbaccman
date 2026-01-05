@@ -171,6 +171,12 @@ function Sessions() {
   const [searchText, setSearchText] = useState('')
   const [searchColumn, setSearchColumn] = useState<string>('all')
   const [showSlowOnly, setShowSlowOnly] = useState(searchParams.get('filter') === 'slow')
+  const [querySelectedKeys, setQuerySelectedKeys] = useState<React.Key[]>([])
+  const [connectionSelectedKeys, setConnectionSelectedKeys] = useState<React.Key[]>([])
+  const [bulkKilling, setBulkKilling] = useState(false)
+
+  // Get current tab's selected keys
+  const selectedRowKeys = activeTab === 'query' ? querySelectedKeys : connectionSelectedKeys
 
   const fetchSessions = useCallback(async () => {
     setLoading(true)
@@ -207,6 +213,85 @@ function Sessions() {
       const axiosError = error as { response?: { data?: { error?: string } } }
       const errorMessage = axiosError.response?.data?.error || 'Failed to kill session'
       message.error(errorMessage)
+    }
+  }
+
+  const handleBulkKill = async () => {
+    const currentSelectedKeys = activeTab === 'query' ? querySelectedKeys : connectionSelectedKeys
+    if (currentSelectedKeys.length === 0) {
+      message.warning('No sessions selected')
+      return
+    }
+
+    setBulkKilling(true)
+    try {
+      const currentSessions = activeTab === 'query' ? querySessions : connectionSessions
+      const targets = currentSelectedKeys.map(key => {
+        const [pid, serialNum] = key.toString().split('-').map(Number)
+        const session = currentSessions.find(s => s.pid === pid)
+        return {
+          pid,
+          serialNum: session?.serialNum ?? (isNaN(serialNum) ? null : serialNum)
+        }
+      })
+
+      const response = await sessionsApi.bulkKill(targets)
+
+      if (response.data.failed > 0) {
+        message.warning(`Killed ${response.data.success} session(s), ${response.data.failed} failed`)
+      } else {
+        message.success(`Successfully killed ${response.data.success} session(s)`)
+      }
+
+      if (activeTab === 'query') {
+        setQuerySelectedKeys([])
+      } else {
+        setConnectionSelectedKeys([])
+      }
+      fetchSessions()
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string } } }
+      const errorMessage = axiosError.response?.data?.error || 'Failed to kill sessions'
+      message.error(errorMessage)
+    } finally {
+      setBulkKilling(false)
+    }
+  }
+
+  const handleKillAll = async () => {
+    const currentSessions = activeTab === 'query' ? querySessions : connectionSessions
+    if (currentSessions.length === 0) {
+      message.warning('No sessions to kill')
+      return
+    }
+
+    setBulkKilling(true)
+    try {
+      const targets = currentSessions.map(session => ({
+        pid: session.pid,
+        serialNum: session.serialNum ?? null
+      }))
+
+      const response = await sessionsApi.bulkKill(targets)
+
+      if (response.data.failed > 0) {
+        message.warning(`Killed ${response.data.success} session(s), ${response.data.failed} failed`)
+      } else {
+        message.success(`Successfully killed ${response.data.success} session(s)`)
+      }
+
+      if (activeTab === 'query') {
+        setQuerySelectedKeys([])
+      } else {
+        setConnectionSelectedKeys([])
+      }
+      fetchSessions()
+    } catch (error: unknown) {
+      const axiosError = error as { response?: { data?: { error?: string } } }
+      const errorMessage = axiosError.response?.data?.error || 'Failed to kill sessions'
+      message.error(errorMessage)
+    } finally {
+      setBulkKilling(false)
     }
   }
 
@@ -300,6 +385,13 @@ function Sessions() {
 
   // Memoize columns
   const columns = useMemo(() => [
+    {
+      title: 'No.',
+      key: 'no',
+      width: 45,
+      align: 'center' as const,
+      render: (_: unknown, __: SessionInfo, index: number) => index + 1,
+    },
     {
       title: 'PID',
       dataIndex: 'pid',
@@ -478,6 +570,41 @@ function Sessions() {
             <Button icon={<ReloadOutlined />} onClick={fetchSessions} loading={loading}>
               Refresh
             </Button>
+            {selectedRowKeys.length > 0 && (
+              <Popconfirm
+                title="Kill Selected Sessions"
+                description={`Are you sure you want to kill ${selectedRowKeys.length} session(s)?`}
+                onConfirm={handleBulkKill}
+                okText="Yes"
+                cancelText="No"
+              >
+                <Button
+                  type="primary"
+                  danger
+                  icon={<StopOutlined />}
+                  loading={bulkKilling}
+                >
+                  Kill Selected ({selectedRowKeys.length})
+                </Button>
+              </Popconfirm>
+            )}
+            <Popconfirm
+              title="Kill All Sessions"
+              description={`Are you sure you want to kill all ${activeTab === 'query' ? querySessions.length : connectionSessions.length} session(s) in this tab?`}
+              onConfirm={handleKillAll}
+              okText="Yes"
+              cancelText="No"
+              disabled={(activeTab === 'query' ? querySessions.length : connectionSessions.length) === 0}
+            >
+              <Button
+                danger
+                icon={<StopOutlined />}
+                loading={bulkKilling}
+                disabled={(activeTab === 'query' ? querySessions.length : connectionSessions.length) === 0}
+              >
+                Kill All ({activeTab === 'query' ? querySessions.length : connectionSessions.length})
+              </Button>
+            </Popconfirm>
             <Space>
               <Text>Auto-refresh (5s):</Text>
               <Switch checked={autoRefresh} onChange={setAutoRefresh} />
@@ -546,6 +673,10 @@ function Sessions() {
                 dataSource={querySessions}
                 loading={loading}
                 rowKey={(record) => `${record.pid}-${record.serialNum ?? 0}`}
+                rowSelection={{
+                  selectedRowKeys: querySelectedKeys,
+                  onChange: setQuerySelectedKeys,
+                }}
                 pagination={{
                   defaultPageSize: 15,
                   showSizeChanger: true,
@@ -574,6 +705,10 @@ function Sessions() {
                 dataSource={connectionSessions}
                 loading={loading}
                 rowKey={(record) => `${record.pid}-${record.serialNum ?? 0}`}
+                rowSelection={{
+                  selectedRowKeys: connectionSelectedKeys,
+                  onChange: setConnectionSelectedKeys,
+                }}
                 pagination={{
                   defaultPageSize: 15,
                   showSizeChanger: true,

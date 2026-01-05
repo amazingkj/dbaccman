@@ -38,9 +38,8 @@ class OracleDialect : DatabaseDialect {
             s.STATUS as command,
             ROUND((SYSDATE - s.LOGON_TIME) * 24 * 60 * 60) as time,
             s.STATE as state,
-            q.SQL_TEXT as query
+            (SELECT SQL_TEXT FROM V${'$'}SQL WHERE SQL_ID = s.SQL_ID AND ROWNUM = 1) as query
         FROM V${'$'}SESSION s
-        LEFT JOIN V${'$'}SQL q ON s.SQL_ID = q.SQL_ID
         WHERE s.TYPE = 'USER'
         AND s.SID != SYS_CONTEXT('USERENV', 'SID')
         ORDER BY s.LOGON_TIME DESC
@@ -67,9 +66,8 @@ class OracleDialect : DatabaseDialect {
             s.STATUS as command,
             ROUND((SYSDATE - s.LOGON_TIME) * 24 * 60 * 60) as time,
             s.STATE as state,
-            q.SQL_TEXT as query
+            (SELECT SQL_TEXT FROM V${'$'}SQL WHERE SQL_ID = s.SQL_ID AND ROWNUM = 1) as query
         FROM V${'$'}SESSION s
-        LEFT JOIN V${'$'}SQL q ON s.SQL_ID = q.SQL_ID
         WHERE s.TYPE = 'USER'
         AND s.SID != SYS_CONTEXT('USERENV', 'SID')
         AND s.STATUS = 'ACTIVE'
@@ -321,26 +319,149 @@ class OracleDialect : DatabaseDialect {
         WHERE GRANTEE = ?
     """.trimIndent()
 
+    // Oracle object privileges (can be granted on specific tables)
+    private val oracleObjectPrivileges = setOf("SELECT", "INSERT", "UPDATE", "DELETE", "ALTER", "INDEX", "REFERENCES", "EXECUTE")
+
+    // Oracle system privileges with ANY TABLE (for granting on all tables)
+    private val oracleAnyTablePrivileges = setOf("SELECT", "INSERT", "UPDATE", "DELETE", "ALTER", "DROP")
+
+    // Oracle direct system privileges (granted TO user without ON clause)
+    private val oracleDirectSystemPrivileges = setOf(
+        "CREATE SESSION",
+        "CREATE TABLE",
+        "CREATE VIEW",
+        "CREATE PROCEDURE",
+        "CREATE SEQUENCE",
+        "CREATE TRIGGER",
+        "CREATE SYNONYM",
+        "CREATE TYPE",
+        "UNLIMITED TABLESPACE",
+        "CREATE ANY TABLE",
+        "DROP ANY TABLE",
+        "ALTER ANY TABLE",
+        "SELECT ANY TABLE",
+        "INSERT ANY TABLE",
+        "UPDATE ANY TABLE",
+        "DELETE ANY TABLE"
+    )
+
+    // Map MySQL privileges to Oracle equivalents for object-level grants
+    private fun mapToOracleObjectPrivilege(privilege: String): String? {
+        val upper = privilege.uppercase()
+        return if (upper in oracleObjectPrivileges) upper else null
+    }
+
+    // Map to Oracle ANY TABLE system privileges
+    private fun mapToOracleAnyTablePrivilege(privilege: String): String? {
+        val upper = privilege.uppercase()
+        return if (upper in oracleAnyTablePrivileges) "${upper} ANY TABLE" else null
+    }
+
+    // Check if privilege is a direct system privilege
+    private fun isDirectSystemPrivilege(privilege: String): Boolean {
+        return privilege.uppercase() in oracleDirectSystemPrivileges
+    }
+
     override fun getGrantSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
-        val privList = privileges.joinToString(", ")
-        val target = if (table == "*") {
-            "ANY TABLE"
-        } else {
-            "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
-        }
         val oracleUsername = formatOracleUsername(username)
-        return "GRANT $privList ON $target TO $oracleUsername"
+
+        // Separate direct system privileges from object/ANY TABLE privileges
+        val directSystemPrivs = privileges.filter { isDirectSystemPrivilege(it) }.map { it.uppercase() }
+        val otherPrivs = privileges.filterNot { isDirectSystemPrivilege(it) }
+
+        // If all privileges are direct system privileges, grant them directly
+        if (directSystemPrivs.isNotEmpty() && otherPrivs.isEmpty()) {
+            return "GRANT ${directSystemPrivs.joinToString(", ")} TO $oracleUsername"
+        }
+
+        // If there are direct system privileges mixed with other privileges, combine them
+        if (directSystemPrivs.isNotEmpty() && otherPrivs.isNotEmpty()) {
+            // This case shouldn't happen with proper UI, but handle it gracefully
+            // Grant system privileges separately from object privileges
+            val systemGrant = "GRANT ${directSystemPrivs.joinToString(", ")} TO $oracleUsername"
+            if (table == "*") {
+                val validPrivileges = otherPrivs.mapNotNull { mapToOracleAnyTablePrivilege(it) }.distinct()
+                return if (validPrivileges.isNotEmpty()) {
+                    "$systemGrant; GRANT ${validPrivileges.joinToString(", ")} TO $oracleUsername"
+                } else {
+                    systemGrant
+                }
+            } else {
+                val validPrivileges = otherPrivs.mapNotNull { mapToOracleObjectPrivilege(it) }.distinct()
+                return if (validPrivileges.isNotEmpty()) {
+                    "$systemGrant; GRANT ${validPrivileges.joinToString(", ")} ON ${quoteIdentifier(database)}.${quoteIdentifier(table)} TO $oracleUsername"
+                } else {
+                    systemGrant
+                }
+            }
+        }
+
+        // No direct system privileges - handle object/ANY TABLE privileges
+        return if (table == "*") {
+            // ANY TABLE system privileges: GRANT SELECT ANY TABLE, INSERT ANY TABLE TO user
+            val validPrivileges = privileges.mapNotNull { mapToOracleAnyTablePrivilege(it) }.distinct()
+            if (validPrivileges.isEmpty()) {
+                throw IllegalArgumentException("No valid Oracle system privileges specified. Valid: SELECT, INSERT, UPDATE, DELETE, ALTER, DROP")
+            }
+            "GRANT ${validPrivileges.joinToString(", ")} TO $oracleUsername"
+        } else {
+            // Object privileges: GRANT SELECT, INSERT ON schema.table TO user
+            val validPrivileges = privileges.mapNotNull { mapToOracleObjectPrivilege(it) }.distinct()
+            if (validPrivileges.isEmpty()) {
+                throw IllegalArgumentException("No valid Oracle object privileges specified. Valid: SELECT, INSERT, UPDATE, DELETE, ALTER, INDEX, REFERENCES, EXECUTE")
+            }
+            "GRANT ${validPrivileges.joinToString(", ")} ON ${quoteIdentifier(database)}.${quoteIdentifier(table)} TO $oracleUsername"
+        }
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
-        val privList = privileges.joinToString(", ")
-        val target = if (table == "*") {
-            "ANY TABLE"
-        } else {
-            "${quoteIdentifier(database)}.${quoteIdentifier(table)}"
-        }
         val oracleUsername = formatOracleUsername(username)
-        return "REVOKE $privList ON $target FROM $oracleUsername"
+
+        // Separate direct system privileges from object/ANY TABLE privileges
+        val directSystemPrivs = privileges.filter { isDirectSystemPrivilege(it) }.map { it.uppercase() }
+        val otherPrivs = privileges.filterNot { isDirectSystemPrivilege(it) }
+
+        // If all privileges are direct system privileges, revoke them directly
+        if (directSystemPrivs.isNotEmpty() && otherPrivs.isEmpty()) {
+            return "REVOKE ${directSystemPrivs.joinToString(", ")} FROM $oracleUsername"
+        }
+
+        // If there are direct system privileges mixed with other privileges, combine them
+        if (directSystemPrivs.isNotEmpty() && otherPrivs.isNotEmpty()) {
+            val systemRevoke = "REVOKE ${directSystemPrivs.joinToString(", ")} FROM $oracleUsername"
+            if (table == "*") {
+                val validPrivileges = otherPrivs.mapNotNull { mapToOracleAnyTablePrivilege(it) }.distinct()
+                return if (validPrivileges.isNotEmpty()) {
+                    "$systemRevoke; REVOKE ${validPrivileges.joinToString(", ")} FROM $oracleUsername"
+                } else {
+                    systemRevoke
+                }
+            } else {
+                val validPrivileges = otherPrivs.mapNotNull { mapToOracleObjectPrivilege(it) }.distinct()
+                return if (validPrivileges.isNotEmpty()) {
+                    "$systemRevoke; REVOKE ${validPrivileges.joinToString(", ")} ON ${quoteIdentifier(database)}.${quoteIdentifier(table)} FROM $oracleUsername"
+                } else {
+                    systemRevoke
+                }
+            }
+        }
+
+        // No direct system privileges - handle object/ANY TABLE privileges
+        return if (table == "*") {
+            // ANY TABLE system privileges: REVOKE SELECT ANY TABLE, INSERT ANY TABLE FROM user
+            val validPrivileges = privileges.mapNotNull { mapToOracleAnyTablePrivilege(it) }.distinct()
+            if (validPrivileges.isEmpty()) {
+                throw IllegalArgumentException("No valid Oracle system privileges specified")
+            }
+            "REVOKE ${validPrivileges.joinToString(", ")} FROM $oracleUsername"
+        } else {
+            // Object privileges: REVOKE SELECT, INSERT ON schema.table FROM user
+            val validPrivileges = privileges.mapNotNull { mapToOracleObjectPrivilege(it) }.distinct()
+            if (validPrivileges.isEmpty()) {
+                throw IllegalArgumentException("No valid Oracle object privileges specified")
+            }
+            "REVOKE ${validPrivileges.joinToString(", ")} ON ${quoteIdentifier(database)}.${quoteIdentifier(table)} FROM $oracleUsername"
+        }
     }
 
     override fun getShowDatabasesQuery(): String = """
@@ -358,30 +479,36 @@ class OracleDialect : DatabaseDialect {
             u.USERNAME as name,
             NVL(t.table_count, 0) as table_count,
             NVL(t.total_rows, 0) as total_rows,
-            NVL(t.total_size, 0) as "size"
-        FROM ALL_USERS u
+            NVL(s.total_size, 0) as total_size
+        FROM DBA_USERS u
         LEFT JOIN (
             SELECT OWNER,
                    COUNT(*) as table_count,
-                   SUM(NVL(NUM_ROWS, 0)) as total_rows,
-                   SUM(NVL(BLOCKS, 0) * 8192) as total_size
-            FROM ALL_TABLES
+                   SUM(NVL(NUM_ROWS, 0)) as total_rows
+            FROM DBA_TABLES
             GROUP BY OWNER
         ) t ON u.USERNAME = t.OWNER
+        LEFT JOIN (
+            SELECT OWNER, SUM(BYTES) as total_size
+            FROM DBA_SEGMENTS
+            WHERE SEGMENT_TYPE = 'TABLE'
+            GROUP BY OWNER
+        ) s ON u.USERNAME = s.OWNER
         WHERE u.USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
         ORDER BY u.USERNAME
     """.trimIndent()
 
     override fun getTablesQuery(): String = """
         SELECT
-            TABLE_NAME as name,
+            t.TABLE_NAME as name,
             'Oracle' as engine,
-            NVL(NUM_ROWS, 0) as "rows",
-            NVL(BLOCKS * 8192, 0) as "size",
-            NVL(TO_CHAR(LAST_ANALYZED, 'YYYY-MM-DD HH24:MI:SS'), '') as create_time
-        FROM ALL_TABLES
-        WHERE OWNER = UPPER(?)
-        ORDER BY TABLE_NAME
+            NVL(t.NUM_ROWS, 0) as row_count,
+            NVL(s.BYTES, 0) as table_size,
+            NVL(TO_CHAR(t.LAST_ANALYZED, 'YYYY-MM-DD HH24:MI:SS'), '') as create_time
+        FROM DBA_TABLES t
+        LEFT JOIN DBA_SEGMENTS s ON t.OWNER = s.OWNER AND t.TABLE_NAME = s.SEGMENT_NAME AND s.SEGMENT_TYPE = 'TABLE'
+        WHERE t.OWNER = UPPER(?)
+        ORDER BY t.TABLE_NAME
     """.trimIndent()
 
     override fun getTableColumnsQuery(): String = """
@@ -435,6 +562,14 @@ class OracleDialect : DatabaseDialect {
     override fun getSelectWithLimitSql(quotedTable: String, limit: Int): String {
         // Oracle 12c+ supports FETCH FIRST syntax
         return "SELECT * FROM $quotedTable FETCH FIRST $limit ROWS ONLY"
+    }
+
+    override fun getGatherStatsSql(schema: String, table: String?): String {
+        return if (table != null) {
+            "BEGIN DBMS_STATS.GATHER_TABLE_STATS('${schema.uppercase()}', '${table.uppercase()}'); END;"
+        } else {
+            "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS('${schema.uppercase()}'); END;"
+        }
     }
 
     // ==================== Tablespace Queries ====================
@@ -504,6 +639,21 @@ class OracleDialect : DatabaseDialect {
         AND NVL(?, 'localhost') IS NOT NULL
     """.trimIndent()
 
+    /**
+     * Returns password expiry query for regular users (uses USER_USERS instead of DBA_USERS).
+     */
+    fun getMyPasswordExpiryQuery(): String = """
+        SELECT
+            USERNAME as "user",
+            'localhost' as host,
+            TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
+            TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
+            CASE WHEN ACCOUNT_STATUS LIKE '%EXPIRED%' THEN 1 ELSE 0 END as is_expired,
+            TRUNC(EXPIRY_DATE - SYSDATE) as days_until_expiry
+        FROM USER_USERS
+        WHERE NVL(?, 'localhost') IS NOT NULL
+    """.trimIndent()
+
     override fun getPasswordExpiryDaysQuery(): String = """
         SELECT
             TRUNC(EXPIRY_DATE - SYSDATE) as days_until_expiry
@@ -526,43 +676,73 @@ class OracleDialect : DatabaseDialect {
     )
 
     override fun getSystemUsers(): List<String> = listOf(
+        // Core Oracle system accounts
         "SYS",
         "SYSTEM",
         "DBSNMP",
         "SYSMAN",
         "OUTLN",
+        // Metadata and schema management
         "MDSYS",
         "ORDSYS",
         "EXFSYS",
         "WMSYS",
+        "CTXSYS",
+        "OLAPSYS",
+        "LBACSYS",
+        "DVSYS",
+        "DVF",
+        "AUDSYS",
+        // Application and web services
         "APPQOSSYS",
         "APEX_PUBLIC_USER",
+        "APEX_040200",
+        "APEX_050000",
+        "APEX_INSTANCE_ADMIN_USER",
+        "APEX_LISTENER",
+        "APEX_REST_PUBLIC_USER",
+        "ORDS_PUBLIC_USER",
+        "ORDS_METADATA",
+        "FLOWS_FILES",
+        // Internal Oracle accounts
         "DIP",
         "ANONYMOUS",
         "XDB",
         "XS${'$'}NULL",
         "ORACLE_OCM",
+        // Global data services
         "GSMADMIN_INTERNAL",
         "GSMCATUSER",
         "GSMUSER",
-        "LBACSYS",
-        "OLAPSYS",
-        "CTXSYS",
-        "DVSYS",
-        "DVF",
-        "AUDSYS",
-        "DBSFWUSER",
         "GGSYS",
+        // Security and backup
+        "DBSFWUSER",
         "REMOTE_SCHEDULER_AGENT",
         "SYSBACKUP",
         "SYSDG",
         "SYSKM",
         "SYSRAC",
         "SYS${'$'}UMF",
+        // Java and development
         "OJVMSYS",
         "SI_INFORMTN_SCHEMA",
         "ORDDATA",
-        "ORDPLUGINS"
+        "ORDPLUGINS",
+        // Spatial and multimedia
+        "SPATIAL_CSW_ADMIN_USR",
+        "SPATIAL_WFS_ADMIN_USR",
+        // CDB/PDB management
+        "PDBADMIN",
+        "C##CLOUD${'$'}SERVICE",
+        // Additional Oracle internal accounts
+        "MDDATA",
+        "SCOTT",
+        "HR",
+        "OE",
+        "PM",
+        "IX",
+        "SH",
+        "BI"
     )
 
     // ==================== Schema/User Context ====================
