@@ -65,13 +65,26 @@ class DashboardServiceTest {
                 DatabaseInfo("db2", 30, 5000L, 524288L)
             )
 
+            val healthScore = HealthScore(
+                total = 85,
+                accountScore = 35,
+                sessionScore = 25,
+                storageScore = 25,
+                status = "healthy",
+                issues = listOf("2개 계정이 30일 내 만료 예정")
+            )
+
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 25,
                 expiringSoon = 5,
                 slowQueries = 3,
+                lockedAccounts = 2,
                 totalDatabases = 10,
                 totalTables = 150,
+                tablespaceUsage = 75,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = expiringAccounts,
                 longRunningSessions = longRunningSessions,
                 topDatabases = topDatabases
@@ -81,8 +94,13 @@ class DashboardServiceTest {
             assertEquals(25, stats.activeSessions)
             assertEquals(5, stats.expiringSoon)
             assertEquals(3, stats.slowQueries)
+            assertEquals(2, stats.lockedAccounts)
             assertEquals(10, stats.totalDatabases)
             assertEquals(150, stats.totalTables)
+            assertEquals(75, stats.tablespaceUsage)
+            assertEquals(0, stats.criticalTablespaces)
+            assertEquals(85, stats.healthScore.total)
+            assertEquals("healthy", stats.healthScore.status)
             assertEquals(2, stats.expiringAccounts.size)
             assertEquals(1, stats.longRunningSessions.size)
             assertEquals(2, stats.topDatabases.size)
@@ -91,13 +109,19 @@ class DashboardServiceTest {
         @Test
         @DisplayName("DashboardStats with empty collections")
         fun testDashboardStatsEmpty() {
+            val healthScore = HealthScore(100, 40, 30, 30, "healthy", emptyList())
+
             val stats = DashboardStats(
                 totalAccounts = 0,
                 activeSessions = 0,
                 expiringSoon = 0,
                 slowQueries = 0,
+                lockedAccounts = 0,
                 totalDatabases = 0,
                 totalTables = 0,
+                tablespaceUsage = 0,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = emptyList()
@@ -105,6 +129,8 @@ class DashboardServiceTest {
 
             assertEquals(0, stats.totalAccounts)
             assertEquals(0, stats.activeSessions)
+            assertEquals(0, stats.lockedAccounts)
+            assertEquals(100, stats.healthScore.total)
             assertTrue(stats.expiringAccounts.isEmpty())
             assertTrue(stats.longRunningSessions.isEmpty())
             assertTrue(stats.topDatabases.isEmpty())
@@ -113,13 +139,19 @@ class DashboardServiceTest {
         @Test
         @DisplayName("DashboardStats should handle large numbers")
         fun testDashboardStatsLargeNumbers() {
+            val healthScore = HealthScore(50, 20, 15, 15, "warning", listOf("250개 계정이 30일 내 만료 예정"))
+
             val stats = DashboardStats(
                 totalAccounts = 10000,
                 activeSessions = 500,
                 expiringSoon = 250,
                 slowQueries = 100,
+                lockedAccounts = 50,
                 totalDatabases = 1000,
                 totalTables = 50000,
+                tablespaceUsage = 85,
+                criticalTablespaces = 2,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = emptyList()
@@ -128,6 +160,8 @@ class DashboardServiceTest {
             assertEquals(10000, stats.totalAccounts)
             assertEquals(500, stats.activeSessions)
             assertEquals(50000, stats.totalTables)
+            assertEquals(50, stats.lockedAccounts)
+            assertEquals(85, stats.tablespaceUsage)
         }
 
         @Test
@@ -138,14 +172,19 @@ class DashboardServiceTest {
             }
 
             val limitedAccounts = accounts.take(5)
+            val healthScore = HealthScore(60, 20, 25, 15, "warning", emptyList())
 
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 10,
                 expiringSoon = 10,
                 slowQueries = 5,
+                lockedAccounts = 0,
                 totalDatabases = 5,
                 totalTables = 100,
+                tablespaceUsage = 50,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = limitedAccounts,
                 longRunningSessions = emptyList(),
                 topDatabases = emptyList()
@@ -164,14 +203,19 @@ class DashboardServiceTest {
             }
 
             val limitedSessions = sessions.sortedByDescending { it.time }.take(5)
+            val healthScore = HealthScore(70, 35, 20, 15, "warning", emptyList())
 
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 10,
                 expiringSoon = 5,
                 slowQueries = 10,
+                lockedAccounts = 0,
                 totalDatabases = 5,
                 totalTables = 100,
+                tablespaceUsage = 60,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = limitedSessions,
                 topDatabases = emptyList()
@@ -190,14 +234,19 @@ class DashboardServiceTest {
             }
 
             val limitedDatabases = databases.take(5)
+            val healthScore = HealthScore(80, 35, 25, 20, "healthy", emptyList())
 
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 10,
                 expiringSoon = 5,
                 slowQueries = 5,
+                lockedAccounts = 0,
                 totalDatabases = 10,
                 totalTables = 100,
+                tablespaceUsage = 40,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = limitedDatabases
@@ -614,14 +663,19 @@ class DashboardServiceTest {
                 ExpiringAccount("user2", "localhost", 10),
                 ExpiringAccount("user3", "localhost", 15)
             )
+            val healthScore = HealthScore(88, 28, 30, 30, "healthy", emptyList())
 
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 10,
                 expiringSoon = expiringAccounts.size,
                 slowQueries = 5,
+                lockedAccounts = 0,
                 totalDatabases = 5,
                 totalTables = 100,
+                tablespaceUsage = 30,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = expiringAccounts,
                 longRunningSessions = emptyList(),
                 topDatabases = emptyList()
@@ -637,14 +691,19 @@ class DashboardServiceTest {
                 DatabaseInfo("db1", 50, 10000L, 1048576L),
                 DatabaseInfo("db2", 30, 5000L, 524288L)
             )
+            val healthScore = HealthScore(85, 35, 25, 25, "healthy", emptyList())
 
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 10,
                 expiringSoon = 5,
                 slowQueries = 5,
+                lockedAccounts = 0,
                 totalDatabases = 10, // Total in system
                 totalTables = 80,
+                tablespaceUsage = 45,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = databases // Top 5 (or less)
@@ -663,14 +722,19 @@ class DashboardServiceTest {
             )
 
             val totalTables = databases.sumOf { it.tableCount }
+            val healthScore = HealthScore(90, 36, 27, 27, "healthy", emptyList())
 
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 10,
                 expiringSoon = 5,
                 slowQueries = 5,
+                lockedAccounts = 0,
                 totalDatabases = 3,
                 totalTables = totalTables,
+                tablespaceUsage = 35,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = databases

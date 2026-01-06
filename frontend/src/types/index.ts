@@ -214,13 +214,26 @@ export interface IndexInfo {
 }
 
 // Dashboard Types
+export interface HealthScore {
+  total: number
+  accountScore: number
+  sessionScore: number
+  storageScore: number
+  status: 'healthy' | 'warning' | 'critical'
+  issues: string[]
+}
+
 export interface DashboardStats {
   totalAccounts: number
   activeSessions: number
   expiringSoon: number
   slowQueries: number
+  lockedAccounts: number
   totalDatabases: number
   totalTables: number
+  tablespaceUsage: number
+  criticalTablespaces: number
+  healthScore: HealthScore
   expiringAccounts: ExpiringAccount[]
   longRunningSessions: SessionInfo[]
   topDatabases: DatabaseInfo[]

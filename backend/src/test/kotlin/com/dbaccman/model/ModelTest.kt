@@ -1006,13 +1006,19 @@ class ModelTest {
         @Test
         @DisplayName("DashboardStats should have correct properties")
         fun testDashboardStatsProperties() {
+            val healthScore = HealthScore(75, 30, 25, 20, "warning", listOf("10개 계정이 30일 내 만료 예정"))
+
             val stats = DashboardStats(
                 totalAccounts = 150,
                 activeSessions = 25,
                 expiringSoon = 10,
                 slowQueries = 3,
+                lockedAccounts = 2,
                 totalDatabases = 5,
                 totalTables = 200,
+                tablespaceUsage = 65,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = listOf(
                     ExpiringAccount("user1", "%", 5),
                     ExpiringAccount("user2", "%", 10)
@@ -1029,8 +1035,13 @@ class ModelTest {
             assertEquals(25, stats.activeSessions)
             assertEquals(10, stats.expiringSoon)
             assertEquals(3, stats.slowQueries)
+            assertEquals(2, stats.lockedAccounts)
             assertEquals(5, stats.totalDatabases)
             assertEquals(200, stats.totalTables)
+            assertEquals(65, stats.tablespaceUsage)
+            assertEquals(0, stats.criticalTablespaces)
+            assertEquals(75, stats.healthScore.total)
+            assertEquals("warning", stats.healthScore.status)
             assertEquals(2, stats.expiringAccounts.size)
             assertEquals(1, stats.longRunningSessions.size)
             assertEquals(1, stats.topDatabases.size)
@@ -1039,13 +1050,19 @@ class ModelTest {
         @Test
         @DisplayName("DashboardStats should handle empty lists")
         fun testDashboardStatsEmptyLists() {
+            val healthScore = HealthScore(100, 40, 30, 30, "healthy", emptyList())
+
             val stats = DashboardStats(
                 totalAccounts = 0,
                 activeSessions = 0,
                 expiringSoon = 0,
                 slowQueries = 0,
+                lockedAccounts = 0,
                 totalDatabases = 0,
                 totalTables = 0,
+                tablespaceUsage = 0,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = emptyList()
@@ -1054,6 +1071,23 @@ class ModelTest {
             assertTrue(stats.expiringAccounts.isEmpty())
             assertTrue(stats.longRunningSessions.isEmpty())
             assertTrue(stats.topDatabases.isEmpty())
+            assertEquals(100, stats.healthScore.total)
+            assertEquals("healthy", stats.healthScore.status)
+        }
+
+        @Test
+        @DisplayName("HealthScore should calculate correct status")
+        fun testHealthScoreStatus() {
+            val healthy = HealthScore(85, 38, 27, 20, "healthy", emptyList())
+            val warning = HealthScore(65, 25, 20, 20, "warning", listOf("5개 계정이 30일 내 만료 예정"))
+            val critical = HealthScore(45, 15, 15, 15, "critical", listOf("많은 계정이 만료 예정", "Tablespace 사용률 높음"))
+
+            assertEquals("healthy", healthy.status)
+            assertEquals("warning", warning.status)
+            assertEquals("critical", critical.status)
+            assertTrue(healthy.total >= 80)
+            assertTrue(warning.total >= 60 && warning.total < 80)
+            assertTrue(critical.total < 60)
         }
     }
 

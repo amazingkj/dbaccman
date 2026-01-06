@@ -17,13 +17,19 @@ class DashboardRoutesTest {
         @Test
         @DisplayName("DashboardStats should have all required properties")
         fun testDashboardStatsProperties() {
+            val healthScore = HealthScore(85, 35, 25, 25, "healthy", emptyList())
+
             val stats = DashboardStats(
                 totalAccounts = 100,
                 activeSessions = 25,
                 expiringSoon = 5,
                 slowQueries = 2,
+                lockedAccounts = 0,
                 totalDatabases = 10,
                 totalTables = 500,
+                tablespaceUsage = 50,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = emptyList()
@@ -33,8 +39,11 @@ class DashboardRoutesTest {
             assertEquals(25, stats.activeSessions)
             assertEquals(5, stats.expiringSoon)
             assertEquals(2, stats.slowQueries)
+            assertEquals(0, stats.lockedAccounts)
             assertEquals(10, stats.totalDatabases)
             assertEquals(500, stats.totalTables)
+            assertEquals(50, stats.tablespaceUsage)
+            assertEquals(85, stats.healthScore.total)
         }
 
         @Test
@@ -45,14 +54,19 @@ class DashboardRoutesTest {
                 ExpiringAccount("user2", "%", 7),
                 ExpiringAccount("user3", "192.168.%", 14)
             )
+            val healthScore = HealthScore(88, 28, 30, 30, "healthy", listOf("3개 계정이 30일 내 만료 예정"))
 
             val stats = DashboardStats(
                 totalAccounts = 50,
                 activeSessions = 10,
                 expiringSoon = 3,
                 slowQueries = 0,
+                lockedAccounts = 0,
                 totalDatabases = 5,
                 totalTables = 100,
+                tablespaceUsage = 30,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = expiringAccounts,
                 longRunningSessions = emptyList(),
                 topDatabases = emptyList()
@@ -79,14 +93,19 @@ class DashboardRoutesTest {
                     query = "SELECT * FROM large_table"
                 )
             )
+            val healthScore = HealthScore(77, 36, 21, 20, "warning", listOf("1개 장기 실행 쿼리 감지"))
 
             val stats = DashboardStats(
                 totalAccounts = 20,
                 activeSessions = 5,
                 expiringSoon = 1,
                 slowQueries = 1,
+                lockedAccounts = 0,
                 totalDatabases = 3,
                 totalTables = 50,
+                tablespaceUsage = 40,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = sessions,
                 topDatabases = emptyList()
@@ -105,14 +124,19 @@ class DashboardRoutesTest {
                 DatabaseInfo("analytics", 50, 2000000, 5368709120),
                 DatabaseInfo("staging", 80, 1000000, 2147483648)
             )
+            val healthScore = HealthScore(92, 32, 30, 30, "healthy", emptyList())
 
             val stats = DashboardStats(
                 totalAccounts = 30,
                 activeSessions = 15,
                 expiringSoon = 2,
                 slowQueries = 0,
+                lockedAccounts = 0,
                 totalDatabases = 3,
                 totalTables = 230,
+                tablespaceUsage = 55,
+                criticalTablespaces = 0,
+                healthScore = healthScore,
                 expiringAccounts = emptyList(),
                 longRunningSessions = emptyList(),
                 topDatabases = databases

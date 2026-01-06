@@ -12,6 +12,8 @@ import {
   Spin,
   Alert,
   Progress,
+  Tooltip,
+  Divider,
 } from 'antd'
 import {
   UserOutlined,
@@ -24,6 +26,9 @@ import {
   ThunderboltOutlined,
   SafetyOutlined,
   DashboardOutlined,
+  LockOutlined,
+  HddOutlined,
+  InfoCircleOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/authStore'
 import { dashboardApi } from '../api/dashboard'
@@ -49,10 +54,20 @@ const statCardStyles = {
     bgColor: 'rgba(255, 174, 31, 0.1)',
     icon: <WarningOutlined />,
   },
+  locked: {
+    color: '#ff6b6b',
+    bgColor: 'rgba(255, 107, 107, 0.1)',
+    icon: <LockOutlined />,
+  },
   slowQueries: {
     color: '#fa896b',
     bgColor: 'rgba(250, 137, 107, 0.1)',
     icon: <ClockCircleOutlined />,
+  },
+  storage: {
+    color: '#845ef7',
+    bgColor: 'rgba(132, 94, 247, 0.1)',
+    icon: <HddOutlined />,
   },
   databases: {
     color: '#13deb9',
@@ -178,9 +193,40 @@ function AdminDashboard() {
     )
   }
 
-  // Calculate health score
-  const healthScore = Math.max(0, 100 - (stats.expiringSoon * 5) - (stats.slowQueries * 10))
-  const healthColor = healthScore >= 80 ? '#52c41a' : healthScore >= 60 ? '#faad14' : '#ff4d4f'
+  // Use backend health score
+  const { healthScore } = stats
+  const healthColor = healthScore.status === 'healthy' ? '#52c41a'
+    : healthScore.status === 'warning' ? '#faad14' : '#ff4d4f'
+
+  // Health score tooltip content
+  const healthTooltipContent = (
+    <div style={{ minWidth: 250 }}>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>Health Score Breakdown</div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span><UserOutlined /> Account</span>
+        <span style={{ fontWeight: 500 }}>{healthScore.accountScore}/40</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+        <span><ThunderboltOutlined /> Session</span>
+        <span style={{ fontWeight: 500 }}>{healthScore.sessionScore}/30</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span><HddOutlined /> Storage</span>
+        <span style={{ fontWeight: 500 }}>{healthScore.storageScore}/30</span>
+      </div>
+      {healthScore.issues.length > 0 && (
+        <>
+          <Divider style={{ margin: '8px 0', borderColor: 'rgba(255,255,255,0.2)' }} />
+          <div style={{ fontWeight: 600, marginBottom: 4 }}>Issues</div>
+          {healthScore.issues.map((issue, idx) => (
+            <div key={idx} style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
+              • {issue}
+            </div>
+          ))}
+        </>
+      )}
+    </div>
+  )
 
   return (
     <div>
@@ -263,54 +309,69 @@ function AdminDashboard() {
       {/* Health Score Card */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={24}>
-          <Card
-            style={{ borderRadius: 8 }}
-            styles={{ body: { padding: '16px 24px' } }}
-          >
-            <Row align="middle" gutter={24}>
-              <Col>
-                <SafetyOutlined style={{ fontSize: 32, color: healthColor }} />
-              </Col>
-              <Col flex="auto">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-                  <div>
-                    <Text strong style={{ fontSize: 16 }}>System Health</Text>
-                    <div style={{ color: '#8c8c8c', fontSize: 12 }}>
-                      Based on expiring accounts and slow queries
+          <Tooltip title={healthTooltipContent} placement="bottom" overlayStyle={{ maxWidth: 320 }}>
+            <Card
+              style={{ borderRadius: 8, cursor: 'pointer' }}
+              styles={{ body: { padding: '16px 24px' } }}
+            >
+              <Row align="middle" gutter={24}>
+                <Col>
+                  <SafetyOutlined style={{ fontSize: 32, color: healthColor }} />
+                </Col>
+                <Col flex="auto">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+                    <div>
+                      <Space>
+                        <Text strong style={{ fontSize: 16 }}>System Health</Text>
+                        <InfoCircleOutlined style={{ color: '#8c8c8c', fontSize: 14 }} />
+                      </Space>
+                      <div style={{ color: '#8c8c8c', fontSize: 12 }}>
+                        Account ({healthScore.accountScore}/40) · Session ({healthScore.sessionScore}/30) · Storage ({healthScore.storageScore}/30)
+                      </div>
                     </div>
+                    <Progress
+                      percent={healthScore.total}
+                      strokeColor={healthColor}
+                      style={{ width: 200, margin: 0 }}
+                      format={(percent) => (
+                        <span style={{ color: healthColor, fontWeight: 600 }}>{percent}%</span>
+                      )}
+                    />
                   </div>
-                  <Progress
-                    percent={healthScore}
-                    strokeColor={healthColor}
-                    style={{ width: 200, margin: 0 }}
-                    format={(percent) => (
-                      <span style={{ color: healthColor, fontWeight: 600 }}>{percent}%</span>
+                </Col>
+                <Col>
+                  <Space>
+                    {healthScore.issues.length === 0 ? (
+                      <Tag color="success" style={{ margin: 0 }}>All Systems Normal</Tag>
+                    ) : (
+                      <>
+                        {stats.expiringSoon > 0 && (
+                          <Tag color="warning" style={{ margin: 0 }}>
+                            {stats.expiringSoon} expiring
+                          </Tag>
+                        )}
+                        {stats.lockedAccounts > 0 && (
+                          <Tag color="error" style={{ margin: 0 }}>
+                            {stats.lockedAccounts} locked
+                          </Tag>
+                        )}
+                        {stats.slowQueries > 0 && (
+                          <Tag color="error" style={{ margin: 0 }}>
+                            {stats.slowQueries} slow
+                          </Tag>
+                        )}
+                        {stats.criticalTablespaces > 0 && (
+                          <Tag color="volcano" style={{ margin: 0 }}>
+                            {stats.criticalTablespaces} storage critical
+                          </Tag>
+                        )}
+                      </>
                     )}
-                  />
-                </div>
-              </Col>
-              <Col>
-                <Space>
-                  {stats.expiringSoon === 0 && stats.slowQueries === 0 ? (
-                    <Tag color="success" style={{ margin: 0 }}>All Systems Normal</Tag>
-                  ) : (
-                    <>
-                      {stats.expiringSoon > 0 && (
-                        <Tag color="warning" style={{ margin: 0 }}>
-                          {stats.expiringSoon} expiring
-                        </Tag>
-                      )}
-                      {stats.slowQueries > 0 && (
-                        <Tag color="error" style={{ margin: 0 }}>
-                          {stats.slowQueries} slow queries
-                        </Tag>
-                      )}
-                    </>
-                  )}
-                </Space>
-              </Col>
-            </Row>
-          </Card>
+                  </Space>
+                </Col>
+              </Row>
+            </Card>
+          </Tooltip>
         </Col>
       </Row>
 
@@ -340,6 +401,38 @@ function AdminDashboard() {
           action={
             <Button size="small" danger onClick={() => navigate('/sessions?filter=slow')}>
               View Sessions
+            </Button>
+          }
+          style={{ marginBottom: 16, borderRadius: 8 }}
+        />
+      )}
+
+      {stats.lockedAccounts > 0 && (
+        <Alert
+          message="Locked Accounts"
+          description={`${stats.lockedAccounts} account(s) are currently locked.`}
+          type="error"
+          showIcon
+          icon={<LockOutlined />}
+          action={
+            <Button size="small" danger onClick={() => navigate('/accounts?filter=locked')}>
+              View Accounts
+            </Button>
+          }
+          style={{ marginBottom: 16, borderRadius: 8 }}
+        />
+      )}
+
+      {stats.criticalTablespaces > 0 && (
+        <Alert
+          message="Storage Critical"
+          description={`${stats.criticalTablespaces} tablespace(s) usage exceeded 90%.`}
+          type="warning"
+          showIcon
+          icon={<HddOutlined />}
+          action={
+            <Button size="small" onClick={() => navigate('/tablespaces')}>
+              View Tablespaces
             </Button>
           }
           style={{ marginBottom: 16, borderRadius: 8 }}
@@ -399,7 +492,7 @@ function AdminDashboard() {
             title={
               <Space>
                 <ClockCircleOutlined style={{ color: '#ff4d4f' }} />
-                <span>Long Running Queries</span>
+                <span>Slow Queries</span>
               </Space>
             }
             extra={
@@ -433,7 +526,7 @@ function AdminDashboard() {
             ) : (
               <div style={{ textAlign: 'center', padding: '24px 0', color: '#8c8c8c' }}>
                 <ThunderboltOutlined style={{ fontSize: 32, marginBottom: 8, display: 'block' }} />
-                No long running queries
+                No slow queries
               </div>
             )}
           </Card>
