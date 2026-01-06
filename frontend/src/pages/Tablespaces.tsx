@@ -382,12 +382,26 @@ function Tablespaces() {
     {
       title: 'Usage',
       key: 'usage',
-      width: 120,
+      width: 150,
       render: (_: unknown, record: TablespaceInfo) => {
         const percent = record.fileSize > 0
-          ? Math.round((record.allocatedSize / record.fileSize) * 100)
+          ? parseFloat(((record.allocatedSize / record.fileSize) * 100).toFixed(2))
           : 0
-        return <Progress percent={percent} size="small" />
+        // 사용량에 따른 색상: 90%+ 빨강, 70%+ 주황, 그 외 파랑
+        const strokeColor = percent >= 90 ? '#ff4d4f' : percent >= 70 ? '#faad14' : '#5d87ff'
+        return (
+          <Progress
+            percent={percent}
+            size="small"
+            strokeColor={strokeColor}
+            format={(p) => `${p?.toFixed(2)}%`}
+          />
+        )
+      },
+      sorter: (a: TablespaceInfo, b: TablespaceInfo) => {
+        const aPercent = a.fileSize > 0 ? (a.allocatedSize / a.fileSize) : 0
+        const bPercent = b.fileSize > 0 ? (b.allocatedSize / b.fileSize) : 0
+        return aPercent - bPercent
       },
     },
     {

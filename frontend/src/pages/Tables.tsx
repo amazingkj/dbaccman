@@ -438,7 +438,42 @@ function Tables() {
               ))}
             </Select>
           </Col>
-          <Col span={16}>
+          {/* Selected DB Stats */}
+          {selectedDb && (() => {
+            const selectedDbInfo = databases.find(db => db.name === selectedDb)
+            return selectedDbInfo && (
+              <Col span={8}>
+                <div style={{
+                  display: 'flex',
+                  gap: 24,
+                  padding: '8px 16px',
+                  background: 'rgba(93, 135, 255, 0.05)',
+                  borderRadius: 8,
+                  marginTop: 8,
+                }}>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: '#5d87ff' }}>
+                      {selectedDbInfo.tableCount}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c' }}>Tables</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: '#13deb9' }}>
+                      {selectedDbInfo.totalRows.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c' }}>Rows</div>
+                  </div>
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: '#ffae1f' }}>
+                      {formatSize(selectedDbInfo.size)}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#8c8c8c' }}>Size</div>
+                  </div>
+                </div>
+              </Col>
+            )
+          })()}
+          <Col flex="auto">
             <Space style={{ float: 'right' }}>
               <Input.Search
                 placeholder="Search..."
@@ -464,6 +499,12 @@ function Tables() {
                 Gather Stats
               </Button>
             </Space>
+            {/* Gather Stats Hint */}
+            <div style={{ float: 'right', marginTop: 6, marginRight: 8 }}>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                * Rows/Size 정보를 보려면 <Text strong style={{ fontSize: 11 }}>Gather Stats</Text> 실행 필요
+              </Text>
+            </div>
           </Col>
         </Row>
       </Card>

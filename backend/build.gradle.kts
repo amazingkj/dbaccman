@@ -19,8 +19,12 @@ val hikariVersion = "5.0.1"
 val mysqlVersion = "8.0.33"
 val postgresVersion = "42.7.1"
 val oracleVersion = "23.3.0.23.09"
+val coroutinesVersion = "1.7.3"
 
 dependencies {
+    // Kotlin Coroutines
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutinesVersion")
+
     // Ktor Server
     implementation("io.ktor:ktor-server-core:$ktorVersion")
     implementation("io.ktor:ktor-server-netty:$ktorVersion")

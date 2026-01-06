@@ -1,7 +1,7 @@
 package com.dbaccman.service
 
-import com.dbaccman.model.DashboardStats
-import com.dbaccman.model.HealthScore
+import com.dbaccman.model.*
+import kotlinx.coroutines.*
 import kotlin.math.max
 import kotlin.math.min
 
@@ -12,33 +12,45 @@ class DashboardService {
     private val tableService = TableService()
     private val tablespaceService = TablespaceService()
 
-    fun getDashboardStats(sessionId: String): DashboardStats {
-        // Optimized: Use COUNT(*) query instead of fetching all accounts
-        val totalAccounts = accountService.getAccountCount(sessionId)
+    fun getDashboardStats(sessionId: String): DashboardStats = runBlocking {
+        // 병렬 실행: 독립적인 쿼리들을 동시에 실행
+        val accountStatsDeferred = async(Dispatchers.IO) {
+            accountService.getPaginatedAccounts(sessionId, 1, 1)
+        }
+        val expiringAccountsDeferred = async(Dispatchers.IO) {
+            accountService.getExpiringAccounts(sessionId, 30)
+        }
+        val sessionStatsDeferred = async(Dispatchers.IO) {
+            sessionService.getSessionStats(sessionId)
+        }
+        val longRunningSessionsDeferred = async(Dispatchers.IO) {
+            sessionService.getLongRunningQueries(sessionId, 60)
+        }
+        val databasesDeferred = async(Dispatchers.IO) {
+            tableService.getDatabases(sessionId)
+        }
+        val tablespacesDeferred = async(Dispatchers.IO) {
+            try {
+                tablespaceService.getTablespaces(sessionId)
+            } catch (e: Exception) {
+                emptyList()
+            }
+        }
 
-        // Get expiring accounts (still needed for actual data display)
-        val expiringAccounts = accountService.getExpiringAccounts(sessionId, 30)
-
-        // Get locked accounts count (using paginated to get stats)
-        val accountStats = accountService.getPaginatedAccounts(sessionId, 1, 1)
-        val lockedAccounts = accountStats.stats.lockedAccounts
-
-        // Optimized: Use getSessionStats() for counts, getLongRunningQueries() for data
-        val sessionStats = sessionService.getSessionStats(sessionId)
-        val longRunningSessions = sessionService.getLongRunningQueries(sessionId, 60)
+        // 모든 결과 대기
+        val accountStats = accountStatsDeferred.await()
+        val expiringAccounts = expiringAccountsDeferred.await()
+        val sessionStats = sessionStatsDeferred.await()
+        val longRunningSessions = longRunningSessionsDeferred.await()
             .sortedByDescending { it.time }
             .take(5)
+        val databases = databasesDeferred.await()
+        val tablespaces = tablespacesDeferred.await()
 
-        // Get database info (still needed for actual data display)
-        val databases = tableService.getDatabases(sessionId)
+        // 계산
+        val totalAccounts = accountStats.stats.totalAccounts
+        val lockedAccounts = accountStats.stats.lockedAccounts
         val totalTables = databases.sumOf { it.tableCount }
-
-        // Get tablespace info for storage health
-        val tablespaces = try {
-            tablespaceService.getTablespaces(sessionId)
-        } catch (e: Exception) {
-            emptyList()
-        }
 
         val tablespaceUsages = tablespaces.map { ts ->
             if (ts.fileSize > 0) ((ts.allocatedSize.toDouble() / ts.fileSize) * 100).toInt() else 0
@@ -46,7 +58,7 @@ class DashboardService {
         val maxTablespaceUsage = tablespaceUsages.maxOrNull() ?: 0
         val criticalTablespaces = tablespaceUsages.count { it >= 90 }
 
-        // Calculate health score
+        // Health Score 계산
         val healthScore = calculateHealthScore(
             expiringSoon = expiringAccounts.size,
             lockedAccounts = lockedAccounts,
@@ -57,7 +69,7 @@ class DashboardService {
             maxTablespaceUsage = maxTablespaceUsage
         )
 
-        return DashboardStats(
+        DashboardStats(
             totalAccounts = totalAccounts,
             activeSessions = sessionStats.activeSessions,
             expiringSoon = expiringAccounts.size,
