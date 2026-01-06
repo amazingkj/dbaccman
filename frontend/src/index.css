@@ -191,3 +191,10 @@ body {
   border-radius: 8px;
   margin: 4px 8px !important;
 }
+
+/* Sider Trigger - Remove border */
+.ant-layout-sider-trigger {
+  border: none !important;
+  box-shadow: none !important;
+  border-top: none !important;
+}

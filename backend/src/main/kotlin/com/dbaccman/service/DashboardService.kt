@@ -43,7 +43,7 @@ class DashboardService {
         val sessionStats = sessionStatsDeferred.await()
         val longRunningSessions = longRunningSessionsDeferred.await()
             .sortedByDescending { it.time }
-            .take(5)
+            .take(10)
         val databases = databasesDeferred.await()
         val tablespaces = tablespacesDeferred.await()
 
@@ -80,9 +80,9 @@ class DashboardService {
             tablespaceUsage = maxTablespaceUsage,
             criticalTablespaces = criticalTablespaces,
             healthScore = healthScore,
-            expiringAccounts = expiringAccounts.take(5),
+            expiringAccounts = expiringAccounts.take(10),
             longRunningSessions = longRunningSessions,
-            topDatabases = databases.take(5)
+            topDatabases = databases.take(10)
         )
     }
 
@@ -119,10 +119,10 @@ class DashboardService {
         val accountScore = max(0, 40 - expiringPenalty - lockedPenalty)
 
         if (expiringSoon > 0) {
-            issues.add("${expiringSoon}개 계정이 30일 내 만료 예정")
+            issues.add("$expiringSoon account(s) expiring within 30 days")
         }
         if (lockedAccounts > 0) {
-            issues.add("${lockedAccounts}개 계정이 잠김 상태")
+            issues.add("$lockedAccounts account(s) locked")
         }
 
         // === 세션 점수 (30점 만점) ===
@@ -138,10 +138,10 @@ class DashboardService {
         val sessionScore = max(0, 30 - sessionUsagePenalty - slowQueryPenalty)
 
         if (sessionUsagePercent >= 80) {
-            issues.add("세션 사용률 ${sessionUsagePercent}% (주의 필요)")
+            issues.add("Session usage at ${sessionUsagePercent}% (attention needed)")
         }
         if (slowQueries > 0) {
-            issues.add("${slowQueries}개 장기 실행 쿼리 감지")
+            issues.add("$slowQueries long-running query(s) detected")
         }
 
         // === 스토리지 점수 (30점 만점) ===
@@ -149,10 +149,10 @@ class DashboardService {
         val storageScore = max(0, 30 - storagePenalty)
 
         if (criticalTablespaces > 0) {
-            issues.add("${criticalTablespaces}개 Tablespace가 90% 이상 사용 중")
+            issues.add("$criticalTablespaces tablespace(s) over 90% usage")
         }
         if (maxTablespaceUsage >= 95) {
-            issues.add("Tablespace 사용률 ${maxTablespaceUsage}% (긴급)")
+            issues.add("Tablespace usage at ${maxTablespaceUsage}% (critical)")
         }
 
         // === 종합 점수 ===

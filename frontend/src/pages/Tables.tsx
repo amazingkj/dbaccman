@@ -24,7 +24,7 @@ import {
   EyeOutlined,
   HddOutlined,
   OrderedListOutlined,
-  BarChartOutlined,
+  SyncOutlined,
 } from '@ant-design/icons'
 import { tablesApi, type TableDataResult, type ColumnInfo } from '../api/tables'
 import type { DatabaseInfo, TableInfo, IndexInfo } from '../types'
@@ -132,6 +132,8 @@ function Tables() {
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [searchText, setSearchText] = useState('')
   const [gatheringStats, setGatheringStats] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(15)
 
   useEffect(() => {
     fetchDatabases()
@@ -203,23 +205,30 @@ function Tables() {
     }
   }
 
-  const handleDatabaseSelect = (value: string) => {
+  const handleDatabaseSelect = async (value: string) => {
     setSelectedDb(value)
     setSelectedTable(null)
-    fetchTables(value)
+    setCurrentPage(1) // Reset to first page
+
+    // Step 1: Load tables quickly
+    await fetchTables(value)
+
+    // Step 2: Gather stats in background
+    gatherStatsInBackground(value)
   }
 
-  const handleGatherStats = async () => {
-    if (!selectedDb) return
+  const gatherStatsInBackground = async (database: string) => {
     setGatheringStats(true)
     try {
-      await tablesApi.gatherStats(selectedDb)
-      message.success('Statistics gathered successfully')
+      await tablesApi.gatherStats(database)
       // Refresh data after gathering stats
-      await fetchDatabases()
-      await fetchTables(selectedDb)
+      await Promise.all([
+        fetchDatabases(),
+        fetchTables(database)
+      ])
     } catch {
-      message.error('Failed to gather statistics')
+      // Silent fail for background operation
+      console.error('Failed to gather statistics')
     } finally {
       setGatheringStats(false)
     }
@@ -244,6 +253,16 @@ function Tables() {
 
   const tableColumns = [
     {
+      title: '#',
+      key: 'index',
+      width: 60,
+      render: (_: unknown, __: TableInfo, index: number) => (
+        <span style={{ color: '#8c8c8c' }}>
+          {(currentPage - 1) * pageSize + index + 1}
+        </span>
+      ),
+    },
+    {
       title: 'Table Name',
       dataIndex: 'name',
       key: 'name',
@@ -258,7 +277,7 @@ function Tables() {
       sorter: (a: TableInfo, b: TableInfo) => a.name.localeCompare(b.name),
     },
     {
-      title: 'Rows',
+      title: gatheringStats ? <span>Rows <SyncOutlined spin style={{ fontSize: 10, marginLeft: 4 }} /></span> : 'Rows',
       dataIndex: 'rows',
       key: 'rows',
       width: 100,
@@ -266,7 +285,7 @@ function Tables() {
       sorter: (a: TableInfo, b: TableInfo) => a.rows - b.rows,
     },
     {
-      title: 'Size',
+      title: gatheringStats ? <span>Size <SyncOutlined spin style={{ fontSize: 10, marginLeft: 4 }} /></span> : 'Size',
       dataIndex: 'size',
       key: 'size',
       width: 100,
@@ -447,12 +466,12 @@ function Tables() {
                   display: 'flex',
                   gap: 24,
                   padding: '8px 16px',
-                  background: 'rgba(93, 135, 255, 0.05)',
+                  background: '#fafafa',
                   borderRadius: 8,
                   marginTop: 8,
                 }}>
                   <div style={{ textAlign: 'center' }}>
-                    <div style={{ fontSize: 18, fontWeight: 600, color: '#5d87ff' }}>
+                    <div style={{ fontSize: 18, fontWeight: 600, color: '#3c4b64' }}>
                       {selectedDbInfo.tableCount}
                     </div>
                     <div style={{ fontSize: 11, color: '#8c8c8c' }}>Tables</div>
@@ -484,27 +503,13 @@ function Tables() {
               />
               <Button
                 icon={<ReloadOutlined />}
-                onClick={() => selectedDb && fetchTables(selectedDb)}
-                disabled={!selectedDb}
-              >
-                Refresh
-              </Button>
-              <Button
-                icon={<BarChartOutlined />}
-                onClick={handleGatherStats}
-                disabled={!selectedDb}
+                onClick={() => selectedDb && gatherStatsInBackground(selectedDb)}
+                disabled={!selectedDb || gatheringStats}
                 loading={gatheringStats}
-                title="Rows 값을 보려면 통계 수집이 필요합니다 (Oracle)"
               >
-                Gather Stats
+                {gatheringStats ? 'Updating...' : 'Refresh'}
               </Button>
             </Space>
-            {/* Gather Stats Hint */}
-            <div style={{ float: 'right', marginTop: 6, marginRight: 8 }}>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                * Rows/Size 정보를 보려면 <Text strong style={{ fontSize: 11 }}>Gather Stats</Text> 실행 필요
-              </Text>
-            </div>
           </Col>
         </Row>
       </Card>
@@ -515,7 +520,18 @@ function Tables() {
           dataSource={filteredTables}
           loading={loading}
           rowKey="name"
-          pagination={{ pageSize: 10 }}
+          pagination={{
+            current: currentPage,
+            pageSize: pageSize,
+            total: filteredTables.length,
+            showSizeChanger: true,
+            pageSizeOptions: ['10', '15', '20', '50', '100'],
+            showTotal: (total, range) => `${range[0]}-${range[1]} of ${total}`,
+            onChange: (page, size) => {
+              setCurrentPage(page)
+              if (size !== pageSize) setPageSize(size)
+            },
+          }}
         />
       ) : (
         <Empty description="Select a database to view tables" />

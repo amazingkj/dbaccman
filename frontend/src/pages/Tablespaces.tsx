@@ -143,6 +143,8 @@ function Tablespaces() {
   const [searchColumn, setSearchColumn] = useState<string>('all')
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [pageSize, setPageSize] = useState(15)
   const [form] = Form.useForm()
   const [moveForm] = Form.useForm()
 
@@ -329,11 +331,14 @@ function Tablespaces() {
 
   const columns = [
     {
-      title: 'No.',
-      key: 'no',
-      width: 45,
-      align: 'center' as const,
-      render: (_: unknown, __: TablespaceInfo, index: number) => index + 1,
+      title: '#',
+      key: 'index',
+      width: 50,
+      render: (_: unknown, __: TablespaceInfo, index: number) => (
+        <span style={{ color: '#8c8c8c' }}>
+          {(currentPage - 1) * pageSize + index + 1}
+        </span>
+      ),
     },
     {
       title: 'Name',
@@ -576,7 +581,16 @@ function Tablespaces() {
         dataSource={filteredTablespaces}
         loading={loading}
         rowKey="name"
-        pagination={{ pageSize: 10 }}
+        pagination={{
+          current: currentPage,
+          pageSize: pageSize,
+          showSizeChanger: true,
+          pageSizeOptions: ['10', '15', '20', '50', '100'],
+          onChange: (page, size) => {
+            setCurrentPage(page)
+            if (size !== pageSize) setPageSize(size)
+          },
+        }}
         style={{ marginBottom: 24 }}
         rowSelection={{
           selectedRowKeys,

@@ -7,6 +7,7 @@ import com.dbaccman.dialect.MySQLDialect
 import com.dbaccman.dialect.OracleDialect
 import com.dbaccman.model.*
 import com.dbaccman.util.AuditLogger
+import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import java.sql.ResultSet
 import java.sql.SQLException
@@ -561,19 +562,27 @@ class AccountService {
 
     fun exportAccountsToCsv(sessionId: String, includePermissions: Boolean = false): String {
         val accounts = getAllAccounts(sessionId)
-        val permissionService = PermissionService()
-
         val sb = StringBuilder()
 
         if (includePermissions) {
             sb.appendLine("username,host,password_last_changed,password_lifetime,account_locked,database,table,privilege")
-            accounts.forEach { account ->
-                val permissions = try {
-                    permissionService.getUserPermissions(sessionId, account.username, account.host)
-                } catch (e: Exception) {
-                    emptyList()
-                }
 
+            // 병렬로 모든 계정의 권한 조회 (N+1 → 병렬 처리)
+            val permissionService = PermissionService()
+            val accountPermissions = runBlocking {
+                accounts.map { account ->
+                    async(Dispatchers.IO) {
+                        val permissions = try {
+                            permissionService.getUserPermissions(sessionId, account.username, account.host)
+                        } catch (e: Exception) {
+                            emptyList()
+                        }
+                        account to permissions
+                    }
+                }.awaitAll()
+            }
+
+            accountPermissions.forEach { (account, permissions) ->
                 if (permissions.isEmpty()) {
                     sb.appendLine("${escapeCsv(account.username)},${escapeCsv(account.host)},${escapeCsv(account.passwordLastChanged ?: "")},${account.passwordLifetime ?: ""},${account.accountLocked},,,")
                 } else {

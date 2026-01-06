@@ -20,6 +20,8 @@ export function useAuth() {
 
       setAuth(data)
       resetSessionExpiredFlag()
+      // Reset health alerts on new login
+      sessionStorage.removeItem('healthAlertsDismissed')
 
       // Save to recent connections
       addRecentConnection({

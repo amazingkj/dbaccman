@@ -10,6 +10,7 @@ import io.ktor.server.http.content.*
 import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.cors.routing.*
+import io.ktor.server.plugins.compression.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -25,6 +26,18 @@ fun Application.module() {
             isLenient = true
             ignoreUnknownKeys = true
         })
+    }
+
+    // gzip 압축 활성화 (응답 크기 60-80% 감소)
+    install(Compression) {
+        gzip {
+            priority = 1.0
+            minimumSize(1024) // 1KB 이상만 압축
+        }
+        deflate {
+            priority = 0.9
+            minimumSize(1024)
+        }
     }
 
     install(CORS) {

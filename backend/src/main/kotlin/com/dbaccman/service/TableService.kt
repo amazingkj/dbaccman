@@ -4,11 +4,39 @@ import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.model.*
 import com.dbaccman.util.AuditLogger
 import kotlinx.serialization.Serializable
+import java.util.concurrent.ConcurrentHashMap
 
 class TableService {
 
-    fun getDatabases(sessionId: String): List<DatabaseInfo> {
-        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+    companion object {
+        // 메타데이터 캐시 (세션별, TTL 5분)
+        private const val CACHE_TTL_MS = 5 * 60 * 1000L
+        private val databasesCache = ConcurrentHashMap<String, CachedResult<List<DatabaseInfo>>>()
+        private val tablesCache = ConcurrentHashMap<String, CachedResult<List<TableInfo>>>()
+
+        fun clearCache(sessionId: String) {
+            databasesCache.keys.filter { it.startsWith(sessionId) }.forEach { databasesCache.remove(it) }
+            tablesCache.keys.filter { it.startsWith(sessionId) }.forEach { tablesCache.remove(it) }
+        }
+    }
+
+    private data class CachedResult<T>(val data: T, val timestamp: Long) {
+        fun isExpired(): Boolean = System.currentTimeMillis() - timestamp > CACHE_TTL_MS
+    }
+
+    fun getDatabases(sessionId: String, useCache: Boolean = true): List<DatabaseInfo> {
+        val cacheKey = sessionId
+
+        // 캐시 확인
+        if (useCache) {
+            databasesCache[cacheKey]?.let { cached ->
+                if (!cached.isExpired()) {
+                    return cached.data
+                }
+            }
+        }
+
+        val result = useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getDatabasesQuery()
 
             conn.createStatement().use { stmt ->
@@ -28,10 +56,25 @@ class TableService {
                 }
             }
         }
+
+        // 캐시 저장
+        databasesCache[cacheKey] = CachedResult(result, System.currentTimeMillis())
+        return result
     }
 
-    fun getTables(sessionId: String, database: String): List<TableInfo> {
-        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+    fun getTables(sessionId: String, database: String, useCache: Boolean = true): List<TableInfo> {
+        val cacheKey = "$sessionId:$database"
+
+        // 캐시 확인
+        if (useCache) {
+            tablesCache[cacheKey]?.let { cached ->
+                if (!cached.isExpired()) {
+                    return cached.data
+                }
+            }
+        }
+
+        val result = useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getTablesQuery()
 
             conn.prepareStatement(sql).use { stmt ->
@@ -53,6 +96,10 @@ class TableService {
                 }
             }
         }
+
+        // 캐시 저장
+        tablesCache[cacheKey] = CachedResult(result, System.currentTimeMillis())
+        return result
     }
 
     fun getTableColumns(sessionId: String, database: String, table: String): List<ColumnInfo> {
@@ -179,7 +226,7 @@ class TableService {
     }
 
     fun gatherStats(sessionId: String, schema: String, table: String? = null): Boolean {
-        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+        val result = useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getGatherStatsSql(schema, table)
             if (sql != null) {
                 conn.createStatement().use { stmt ->
@@ -195,6 +242,13 @@ class TableService {
                 false
             }
         }
+
+        // 통계 수집 후 캐시 무효화
+        if (result) {
+            clearCache(sessionId)
+        }
+
+        return result
     }
 }
 

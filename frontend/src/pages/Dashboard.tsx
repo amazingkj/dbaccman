@@ -10,7 +10,6 @@ import {
   Space,
   Button,
   Spin,
-  Alert,
   Progress,
   Tooltip,
   Divider,
@@ -29,6 +28,7 @@ import {
   LockOutlined,
   HddOutlined,
   InfoCircleOutlined,
+  CloseOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/authStore'
 import { dashboardApi } from '../api/dashboard'
@@ -167,6 +167,14 @@ function AdminDashboard() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
+  const [alertsDismissed, setAlertsDismissed] = useState(() => {
+    return sessionStorage.getItem('healthAlertsDismissed') === 'true'
+  })
+
+  const handleDismissAlerts = () => {
+    setAlertsDismissed(true)
+    sessionStorage.setItem('healthAlertsDismissed', 'true')
+  }
 
   const fetchDashboardData = async () => {
     setLoading(true)
@@ -275,7 +283,7 @@ function AdminDashboard() {
             title="Expiring Soon"
             value={stats.expiringSoon}
             style={statCardStyles.expiring}
-            onClick={() => navigate('/accounts')}
+            onClick={() => navigate('/accounts?filter=expiring')}
             description={stats.expiringSoon > 0 ? 'Needs attention' : 'All good'}
           />
         </Col>
@@ -375,68 +383,136 @@ function AdminDashboard() {
         </Col>
       </Row>
 
-      {/* Alerts */}
-      {stats.expiringSoon > 0 && (
-        <Alert
-          message="Password Expiration Warning"
-          description={`${stats.expiringSoon} account(s) will expire within 30 days. Please take action.`}
-          type="warning"
-          showIcon
-          icon={<WarningOutlined />}
-          action={
-            <Button size="small" onClick={() => navigate('/accounts')}>
-              View Accounts
-            </Button>
-          }
-          style={{ marginBottom: 16, borderRadius: 8 }}
-        />
-      )}
-
-      {stats.slowQueries > 0 && (
-        <Alert
-          message="Slow Query Alert"
-          description={`${stats.slowQueries} queries running for more than 60 seconds.`}
-          type="error"
-          showIcon
-          action={
-            <Button size="small" danger onClick={() => navigate('/sessions?filter=slow')}>
-              View Sessions
-            </Button>
-          }
-          style={{ marginBottom: 16, borderRadius: 8 }}
-        />
-      )}
-
-      {stats.lockedAccounts > 0 && (
-        <Alert
-          message="Locked Accounts"
-          description={`${stats.lockedAccounts} account(s) are currently locked.`}
-          type="error"
-          showIcon
-          icon={<LockOutlined />}
-          action={
-            <Button size="small" danger onClick={() => navigate('/accounts?filter=locked')}>
-              View Accounts
-            </Button>
-          }
-          style={{ marginBottom: 16, borderRadius: 8 }}
-        />
-      )}
-
-      {stats.criticalTablespaces > 0 && (
-        <Alert
-          message="Storage Critical"
-          description={`${stats.criticalTablespaces} tablespace(s) usage exceeded 90%.`}
-          type="warning"
-          showIcon
-          icon={<HddOutlined />}
-          action={
-            <Button size="small" onClick={() => navigate('/tablespaces')}>
-              View Tablespaces
-            </Button>
-          }
-          style={{ marginBottom: 16, borderRadius: 8 }}
-        />
+      {/* System Health Notification Popup (우상단) */}
+      {!alertsDismissed && healthScore.issues.length > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 80,
+            right: 24,
+            width: 360,
+            zIndex: 1000,
+            background: '#fff',
+            borderRadius: 12,
+            boxShadow: '0 6px 16px rgba(0, 0, 0, 0.12)',
+            border: `1px solid ${healthColor}20`,
+            overflow: 'hidden',
+          }}
+        >
+          {/* Header */}
+          <div
+            style={{
+              padding: '12px 16px',
+              background: `${healthColor}10`,
+              borderBottom: `1px solid ${healthColor}20`,
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}
+          >
+            <Space>
+              <WarningOutlined style={{ color: healthColor, fontSize: 16 }} />
+              <Text strong style={{ color: healthColor }}>System Health Alerts</Text>
+            </Space>
+            <Button
+              type="text"
+              size="small"
+              icon={<CloseOutlined />}
+              onClick={handleDismissAlerts}
+              style={{ color: '#8c8c8c' }}
+            />
+          </div>
+          {/* Alert Items */}
+          <div style={{ padding: '8px 0', maxHeight: 300, overflowY: 'auto' }}>
+            {stats.expiringSoon > 0 && (
+              <div
+                style={{
+                  padding: '10px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid #f0f0f0',
+                  cursor: 'pointer',
+                }}
+                onClick={() => navigate('/accounts?filter=expiring')}
+              >
+                <Space>
+                  <WarningOutlined style={{ color: '#faad14' }} />
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>Password Expiring</div>
+                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{stats.expiringSoon} account(s) within 30 days</div>
+                  </div>
+                </Space>
+                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+              </div>
+            )}
+            {stats.slowQueries > 0 && (
+              <div
+                style={{
+                  padding: '10px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid #f0f0f0',
+                  cursor: 'pointer',
+                }}
+                onClick={() => navigate('/sessions?filter=slow')}
+              >
+                <Space>
+                  <ClockCircleOutlined style={{ color: '#ff4d4f' }} />
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>Slow Queries</div>
+                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{stats.slowQueries} queries &gt; 60 seconds</div>
+                  </div>
+                </Space>
+                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+              </div>
+            )}
+            {stats.lockedAccounts > 0 && (
+              <div
+                style={{
+                  padding: '10px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  borderBottom: '1px solid #f0f0f0',
+                  cursor: 'pointer',
+                }}
+                onClick={() => navigate('/accounts?filter=locked')}
+              >
+                <Space>
+                  <LockOutlined style={{ color: '#ff4d4f' }} />
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>Locked Accounts</div>
+                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{stats.lockedAccounts} account(s) locked</div>
+                  </div>
+                </Space>
+                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+              </div>
+            )}
+            {stats.criticalTablespaces > 0 && (
+              <div
+                style={{
+                  padding: '10px 16px',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  cursor: 'pointer',
+                }}
+                onClick={() => navigate('/tablespaces')}
+              >
+                <Space>
+                  <HddOutlined style={{ color: '#fa8c16' }} />
+                  <div>
+                    <div style={{ fontWeight: 500, fontSize: 13 }}>Storage Critical</div>
+                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{stats.criticalTablespaces} tablespace(s) &gt; 90%</div>
+                  </div>
+                </Space>
+                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Detail Cards */}
@@ -552,20 +628,36 @@ function AdminDashboard() {
               <List
                 size="small"
                 dataSource={stats.topDatabases}
-                renderItem={(item) => (
-                  <List.Item
-                    style={{ padding: '8px 0', cursor: 'pointer' }}
-                    onClick={() => navigate(`/tables?db=${encodeURIComponent(item.name)}`)}
-                  >
-                    <Space>
-                      <DatabaseOutlined style={{ color: '#1890ff' }} />
-                      <Text ellipsis style={{ maxWidth: 150 }}>{item.name}</Text>
-                    </Space>
-                    <Tag color="blue" style={{ margin: 0, borderRadius: 4 }}>
-                      {item.tableCount} tables
-                    </Tag>
-                  </List.Item>
-                )}
+                renderItem={(item) => {
+                  const formatSize = (bytes: number) => {
+                    if (bytes < 1024) return `${bytes} B`
+                    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+                    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+                    return `${(bytes / 1024 / 1024 / 1024).toFixed(1)} GB`
+                  }
+                  return (
+                    <List.Item
+                      style={{ padding: '8px 0', cursor: 'pointer' }}
+                      onClick={() => navigate(`/tables?db=${encodeURIComponent(item.name)}`)}
+                    >
+                      <Space>
+                        <DatabaseOutlined style={{ color: '#1890ff' }} />
+                        <Text ellipsis style={{ maxWidth: 100 }}>{item.name}</Text>
+                      </Space>
+                      <Space size={4}>
+                        <Tag color="blue" style={{ margin: 0, borderRadius: 4, fontSize: 11 }}>
+                          {item.tableCount} tbl
+                        </Tag>
+                        <Tag color="green" style={{ margin: 0, borderRadius: 4, fontSize: 11 }}>
+                          {item.totalRows.toLocaleString()} rows
+                        </Tag>
+                        <Tag color="purple" style={{ margin: 0, borderRadius: 4, fontSize: 11 }}>
+                          {formatSize(item.size)}
+                        </Tag>
+                      </Space>
+                    </List.Item>
+                  )
+                }}
               />
             ) : (
               <div style={{ textAlign: 'center', padding: '24px 0', color: '#8c8c8c' }}>

@@ -84,6 +84,11 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
             darkItemHoverBg: 'rgba(93, 135, 255, 0.15)',
             darkItemSelectedColor: '#ffffff',
           },
+          Layout: {
+            siderBg: '#2a3547',
+            triggerBg: 'transparent',
+            triggerColor: 'rgba(255, 255, 255, 0.65)',
+          },
         },
       }}
     >

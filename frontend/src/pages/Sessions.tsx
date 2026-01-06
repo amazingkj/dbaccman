@@ -175,7 +175,9 @@ function Sessions() {
   const [connectionSelectedKeys, setConnectionSelectedKeys] = useState<React.Key[]>([])
   const [bulkKilling, setBulkKilling] = useState(false)
   const [queryPageSize, setQueryPageSize] = useState(15)
+  const [queryCurrentPage, setQueryCurrentPage] = useState(1)
   const [connectionPageSize, setConnectionPageSize] = useState(15)
+  const [connectionCurrentPage, setConnectionCurrentPage] = useState(1)
 
   // Get current tab's selected keys
   const selectedRowKeys = activeTab === 'query' ? querySelectedKeys : connectionSelectedKeys
@@ -385,14 +387,17 @@ function Sessions() {
     longRunning: sessions.filter((s) => s.time > LONG_RUNNING_THRESHOLD && !isIdleSession(s.command)).length,
   }), [sessions, querySessions.length, connectionSessions.length])
 
-  // Memoize columns
-  const columns = useMemo(() => [
+  // Column generator with page-aware row numbering
+  const createColumns = (currentPage: number, pageSize: number) => [
     {
-      title: 'No.',
-      key: 'no',
-      width: 45,
-      align: 'center' as const,
-      render: (_: unknown, __: SessionInfo, index: number) => index + 1,
+      title: '#',
+      key: 'index',
+      width: 50,
+      render: (_: unknown, __: SessionInfo, index: number) => (
+        <span style={{ color: '#8c8c8c' }}>
+          {(currentPage - 1) * pageSize + index + 1}
+        </span>
+      ),
     },
     {
       title: 'PID',
@@ -514,7 +519,17 @@ function Sessions() {
         </Popconfirm>
       ),
     },
-  ], [])
+  ]
+
+  // Memoized columns for each table
+  const queryColumns = useMemo(
+    () => createColumns(queryCurrentPage, queryPageSize),
+    [queryCurrentPage, queryPageSize]
+  )
+  const connectionColumns = useMemo(
+    () => createColumns(connectionCurrentPage, connectionPageSize),
+    [connectionCurrentPage, connectionPageSize]
+  )
 
   return (
     <div>
@@ -671,7 +686,7 @@ function Sessions() {
             ),
             children: (
               <Table
-                columns={columns}
+                columns={queryColumns}
                 dataSource={querySessions}
                 loading={loading}
                 rowKey={(record) => `${record.pid}-${record.serialNum ?? 0}`}
@@ -680,10 +695,14 @@ function Sessions() {
                   onChange: setQuerySelectedKeys,
                 }}
                 pagination={{
+                  current: queryCurrentPage,
                   pageSize: queryPageSize,
                   showSizeChanger: true,
                   pageSizeOptions: ['10', '15', '20', '50', '100'],
-                  onShowSizeChange: (_, size) => setQueryPageSize(size),
+                  onChange: (page, size) => {
+                    setQueryCurrentPage(page)
+                    if (size && size !== queryPageSize) setQueryPageSize(size)
+                  },
                 }}
                 scroll={{ x: 1200 }}
               />
@@ -704,7 +723,7 @@ function Sessions() {
             ),
             children: (
               <Table
-                columns={columns}
+                columns={connectionColumns}
                 dataSource={connectionSessions}
                 loading={loading}
                 rowKey={(record) => `${record.pid}-${record.serialNum ?? 0}`}
@@ -713,10 +732,14 @@ function Sessions() {
                   onChange: setConnectionSelectedKeys,
                 }}
                 pagination={{
+                  current: connectionCurrentPage,
                   pageSize: connectionPageSize,
                   showSizeChanger: true,
                   pageSizeOptions: ['10', '15', '20', '50', '100'],
-                  onShowSizeChange: (_, size) => setConnectionPageSize(size),
+                  onChange: (page, size) => {
+                    setConnectionCurrentPage(page)
+                    if (size && size !== connectionPageSize) setConnectionPageSize(size)
+                  },
                 }}
                 scroll={{ x: 1200 }}
               />

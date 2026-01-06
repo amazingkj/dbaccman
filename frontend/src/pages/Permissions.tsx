@@ -140,38 +140,35 @@ function Permissions() {
   const [tablespaceForm] = Form.useForm()
 
   useEffect(() => {
-    fetchAccounts()
-    fetchDatabases()
-    fetchTablespaces()
+    // 병렬로 모든 데이터 로드 (성능 최적화)
+    const fetchAllData = async () => {
+      const [accountsResult, databasesResult, tablespacesResult] = await Promise.allSettled([
+        accountsApi.list(),
+        tablesApi.getDatabases(),
+        tablespacesApi.list(),
+      ])
+
+      if (accountsResult.status === 'fulfilled') {
+        setAccounts(accountsResult.value.data)
+      } else {
+        message.error('Failed to fetch accounts')
+      }
+
+      if (databasesResult.status === 'fulfilled') {
+        setDatabases(databasesResult.value.data)
+      } else {
+        setDatabases([])
+      }
+
+      if (tablespacesResult.status === 'fulfilled') {
+        setTablespaces(tablespacesResult.value.data)
+      } else {
+        setTablespaces([])
+      }
+    }
+
+    fetchAllData()
   }, [])
-
-  const fetchAccounts = async () => {
-    try {
-      const response = await accountsApi.list()
-      setAccounts(response.data)
-    } catch {
-      message.error('Failed to fetch accounts')
-    }
-  }
-
-  const fetchDatabases = async () => {
-    try {
-      const response = await tablesApi.getDatabases()
-      setDatabases(response.data)
-    } catch {
-      setDatabases([])
-    }
-  }
-
-  const fetchTablespaces = async () => {
-    try {
-      const response = await tablespacesApi.list()
-      setTablespaces(response.data)
-    } catch {
-      // Tablespaces might not be available on all database types
-      setTablespaces([])
-    }
-  }
 
   const fetchPermissions = async (userAtHost: string) => {
     setLoading(true)
@@ -469,7 +466,11 @@ function Permissions() {
             rowKey={(record) =>
               `${record.database}-${record.table}-${record.privilege}`
             }
-            pagination={{ pageSize: 10 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              pageSizeOptions: ['10', '20', '50', '100'],
+            }}
           />
         </>
       ) : (

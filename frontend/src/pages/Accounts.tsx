@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Typography,
   Table,
@@ -189,9 +190,13 @@ const isOracleSystemUser = (username: string): boolean => {
 
 function Accounts() {
   const { user } = useAuthStore()
+  const [searchParams, setSearchParams] = useSearchParams()
   const dbType = user?.dbType
   const { privileges: dbPrivileges, defaults: defaultPrivileges } = getPrivilegesForDbType(dbType)
   const hasPrivilegeOptions = dbPrivileges.length > 0
+
+  // Check for filter query param
+  const showExpiring = searchParams.get('filter') === 'expiring'
 
   const [accounts, setAccounts] = useState<Account[]>([])
   const [expiringAccounts, setExpiringAccounts] = useState<ExpiringAccount[]>([])
@@ -490,16 +495,26 @@ function Accounts() {
   }, [searchText, searchColumn])
 
   // Memoize filtered accounts
-  const filteredAccounts = useMemo(() => accounts.filter(filterBySearch), [accounts, filterBySearch])
+  const filteredAccounts = useMemo(() => {
+    let result = accounts.filter(filterBySearch)
+    if (showExpiring) {
+      const expiringUsernames = new Set(expiringAccounts.map(e => e.username))
+      result = result.filter(a => expiringUsernames.has(a.username))
+    }
+    return result
+  }, [accounts, filterBySearch, showExpiring, expiringAccounts])
 
   // Memoize columns to prevent unnecessary re-renders
   const columns = useMemo(() => [
     {
-      title: 'No.',
-      key: 'no',
-      width: 45,
-      align: 'center' as const,
-      render: (_: unknown, __: Account, index: number) => index + 1,
+      title: '#',
+      key: 'index',
+      width: 50,
+      render: (_: unknown, __: Account, index: number) => (
+        <span style={{ color: '#8c8c8c' }}>
+          {(pagination.page - 1) * pagination.pageSize + index + 1}
+        </span>
+      ),
     },
     {
       title: 'Username',
@@ -617,7 +632,7 @@ function Accounts() {
         )
       },
     },
-  ], [])
+  ], [pagination.page, pagination.pageSize])
 
   return (
     <div>
@@ -632,8 +647,22 @@ function Accounts() {
           <Title level={2} style={{ margin: 0, marginBottom: 4 }}>
             <TeamOutlined style={{ marginRight: 12 }} />
             Accounts
+            {showExpiring && (
+              <Tag
+                color="warning"
+                closable
+                onClose={() => setSearchParams({})}
+                style={{ marginLeft: 12, verticalAlign: 'middle', fontSize: 12 }}
+              >
+                Expiring Soon
+              </Tag>
+            )}
           </Title>
-          <Text type="secondary">Database user account management</Text>
+          <Text type="secondary">
+            {showExpiring
+              ? `Showing ${filteredAccounts.length} account(s) expiring within 30 days`
+              : 'Database user account management'}
+          </Text>
         </div>
       </div>
 

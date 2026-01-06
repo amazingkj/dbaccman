@@ -35,6 +35,7 @@ dependencies {
     implementation("io.ktor:ktor-server-auth-jwt:$ktorVersion")
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
+    implementation("io.ktor:ktor-server-compression:$ktorVersion")
 
     // Database Drivers
     implementation("mysql:mysql-connector-java:$mysqlVersion")

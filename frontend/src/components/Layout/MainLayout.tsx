@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
 import { Layout, Tag, Space, Avatar, Dropdown, theme, Modal, Input, Form, message } from 'antd'
-import { LogoutOutlined, UserOutlined, SwapOutlined, PlusOutlined, LinkOutlined } from '@ant-design/icons'
+import { LogoutOutlined, UserOutlined, SwapOutlined, PlusOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { useAuthStore } from '../../store/authStore'
 import { useConnectionStore } from '../../store/connectionStore'
 import { useAuth } from '../../hooks/useAuth'
 import Sidebar from './Sidebar'
 import SessionTimeout from '../common/SessionTimeout'
+import SessionCountdown from '../common/SessionCountdown'
 import type { RecentConnection } from '../../types'
 
 const { Header, Content, Footer } = Layout
@@ -71,21 +72,19 @@ function MainLayout() {
 
   const userMenuItems: MenuProps['items'] = [
     {
-      key: 'current',
+      type: 'group',
       label: (
         <div style={{ padding: '4px 0' }}>
-          <div style={{ fontWeight: 600, marginBottom: 2 }}>{user?.username}</div>
+          <div style={{ fontWeight: 600, marginBottom: 2, color: '#2a3547' }}>{user?.username}</div>
           <div style={{ fontSize: 11, color: '#8c8c8c' }}>{user?.host}:{user?.port}</div>
         </div>
       ),
-      disabled: true,
     },
     { type: 'divider' },
     ...(otherConnections.length > 0 ? [
       {
-        key: 'switch-label',
+        type: 'group' as const,
         label: <span style={{ fontSize: 11, color: '#8c8c8c' }}>Switch Account</span>,
-        disabled: true,
       },
       ...otherConnections.map((conn) => ({
         key: `switch-${conn.host}-${conn.port}-${conn.username}`,
@@ -149,25 +148,23 @@ function MainLayout() {
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: 6,
-              cursor: 'pointer',
+              gap: 8,
             }}
-            onClick={() => navigate('/dashboard')}
           >
-            <LinkOutlined style={{ color: '#8c8c8c', fontSize: 14 }} />
-            <span style={{ fontSize: 13, fontWeight: 500, color: '#595959' }}>
+            <Tag
+              color={getDbTypeColor(user?.dbType)}
+              style={{ margin: 0, fontWeight: 500 }}
+            >
+              {user?.dbType?.toUpperCase()}
+            </Tag>
+            <span style={{ fontSize: 13, color: '#8c8c8c' }}>
               {user?.host}:{user?.port}
             </span>
           </div>
           {user && (
             <Space size="middle">
+              <SessionCountdown />
               <Space>
-                <Tag
-                  color={getDbTypeColor(user.dbType)}
-                  style={{ margin: 0, fontWeight: 500 }}
-                >
-                  {user.dbType?.toUpperCase()}
-                </Tag>
                 <Tag
                   color={user.role === 'admin' ? 'purple' : 'default'}
                   style={{ margin: 0 }}
@@ -175,7 +172,7 @@ function MainLayout() {
                   {user.role.toUpperCase()}
                 </Tag>
               </Space>
-              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+              <Dropdown menu={{ items: userMenuItems }} placement="bottomRight" trigger={['click']}>
                 <Space style={{ cursor: 'pointer' }}>
                   <Avatar
                     size="small"
