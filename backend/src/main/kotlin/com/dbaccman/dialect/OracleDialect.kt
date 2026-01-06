@@ -107,18 +107,21 @@ class OracleDialect : DatabaseDialect {
         WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
     """.trimIndent()
 
-    override fun getPaginatedAccountsQuery(): String = """
-        SELECT
-            USERNAME as username,
-            'localhost' as host,
-            TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
-            TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
-            CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked
-        FROM DBA_USERS
-        WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
-        ORDER BY USERNAME
-        OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
-    """.trimIndent()
+    override fun getPaginatedAccountsQuery(orderByClause: String): String {
+        val orderBy = orderByClause.ifEmpty { "ORDER BY USERNAME" }
+        return """
+            SELECT
+                USERNAME as username,
+                'localhost' as host,
+                TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
+                TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
+                CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked
+            FROM DBA_USERS
+            WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+            $orderBy
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        """.trimIndent()
+    }
 
     override fun getCreateUserSql(username: String, host: String, password: String): String {
         // Oracle usernames should be uppercase and unquoted for standard behavior
@@ -565,10 +568,13 @@ class OracleDialect : DatabaseDialect {
     }
 
     override fun getGatherStatsSql(schema: String, table: String?): String {
+        // Use ESTIMATE_PERCENT for faster sampling (10% sample instead of full scan)
+        // Use NO_INVALIDATE to avoid invalidating dependent cursors
         return if (table != null) {
-            "BEGIN DBMS_STATS.GATHER_TABLE_STATS('${schema.uppercase()}', '${table.uppercase()}'); END;"
+            "BEGIN DBMS_STATS.GATHER_TABLE_STATS('${schema.uppercase()}', '${table.uppercase()}', estimate_percent => 10, no_invalidate => TRUE); END;"
         } else {
-            "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS('${schema.uppercase()}'); END;"
+            // For schema-level, use even smaller sample and skip locked tables
+            "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS('${schema.uppercase()}', estimate_percent => 5, no_invalidate => TRUE, options => 'GATHER AUTO'); END;"
         }
     }
 

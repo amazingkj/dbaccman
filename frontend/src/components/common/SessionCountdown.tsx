@@ -1,12 +1,11 @@
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
+import { Tooltip } from 'antd'
 import { ClockCircleOutlined } from '@ant-design/icons'
 import { useAuthStore, SESSION_TIMEOUT_MS, SESSION_WARNING_MS } from '../../store/authStore'
 
 function SessionCountdown() {
   const { isAuthenticated, lastActivity } = useAuthStore()
   const [remainingTime, setRemainingTime] = useState(SESSION_TIMEOUT_MS)
-  const [tooltip, setTooltip] = useState({ visible: false, x: 0, y: 0 })
-  const containerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!isAuthenticated) return
@@ -46,72 +45,41 @@ function SessionCountdown() {
     return 'transparent'
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    setTooltip({ visible: true, x: e.clientX, y: e.clientY })
-  }
-
-  const handleMouseLeave = () => {
-    setTooltip({ visible: false, x: 0, y: 0 })
-  }
-
   return (
     <>
-      <div
-        ref={containerRef}
-        onMouseMove={handleMouseMove}
-        onMouseLeave={handleMouseLeave}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 4,
-          padding: '4px 10px',
-          borderRadius: 16,
-          background: getBackgroundColor(),
-          transition: 'all 0.3s ease',
-          cursor: 'default',
-        }}
-      >
-        <ClockCircleOutlined
-          style={{
-            fontSize: 12,
-            color: getColor(),
-            animation: isCritical ? 'pulse 1s infinite' : 'none',
-          }}
-        />
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: getColor(),
-            minWidth: 36,
-            textAlign: 'center',
-          }}
-        >
-          {timeString}
-        </span>
-      </div>
-
-      {/* Custom cursor-following tooltip */}
-      {tooltip.visible && (
+      <Tooltip title="Session timeout" placement="bottom">
         <div
           style={{
-            position: 'fixed',
-            left: tooltip.x + 12,
-            top: tooltip.y + 12,
-            padding: '6px 10px',
-            background: 'rgba(0, 0, 0, 0.75)',
-            color: '#fff',
-            fontSize: 12,
-            borderRadius: 6,
-            pointerEvents: 'none',
-            zIndex: 9999,
-            whiteSpace: 'nowrap',
-            boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 10px',
+            borderRadius: 16,
+            background: getBackgroundColor(),
+            transition: 'all 0.3s ease',
+            cursor: 'default',
           }}
         >
-          Session timeout (resets on activity)
+          <ClockCircleOutlined
+            style={{
+              fontSize: 12,
+              color: getColor(),
+              animation: isCritical ? 'pulse 1s infinite' : 'none',
+            }}
+          />
+          <span
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              color: getColor(),
+              minWidth: 36,
+              textAlign: 'center',
+            }}
+          >
+            {timeString}
+          </span>
         </div>
-      )}
+      </Tooltip>
 
       <style>
         {`

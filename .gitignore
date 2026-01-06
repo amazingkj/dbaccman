@@ -27,6 +27,9 @@ out/
 # IDE - VS Code
 .vscode/
 
+# Claude Code
+.claude/
+
 # === Frontend (Node.js/React) ===
 
 # Dependencies

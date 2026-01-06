@@ -43,8 +43,9 @@ interface DatabaseDialect {
     /**
      * Returns paginated accounts query with LIMIT/OFFSET.
      * Parameters: offset (Int), limit (Int)
+     * @param orderByClause Optional ORDER BY clause for sorting (e.g., "ORDER BY username ASC")
      */
-    fun getPaginatedAccountsQuery(): String
+    fun getPaginatedAccountsQuery(orderByClause: String = ""): String
 
     fun getCreateUserSql(username: String, host: String, password: String): String
 

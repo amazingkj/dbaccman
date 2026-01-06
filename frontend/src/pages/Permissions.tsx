@@ -292,6 +292,7 @@ function Permissions() {
       width: 150,
       ellipsis: true,
       render: (db: string) => <Tag color="blue">{db}</Tag>,
+      sorter: (a: Permission, b: Permission) => a.database.localeCompare(b.database),
     },
     {
       title: 'Table',
@@ -301,6 +302,7 @@ function Permissions() {
       ellipsis: true,
       render: (table: string) =>
         table === '*' ? <Tag>All Tables</Tag> : <Tag color="green">{table}</Tag>,
+      sorter: (a: Permission, b: Permission) => a.table.localeCompare(b.table),
     },
     {
       title: 'Privilege',
@@ -318,6 +320,7 @@ function Permissions() {
                 : 'default'
         return <Tag color={color}>{privilege}</Tag>
       },
+      sorter: (a: Permission, b: Permission) => a.privilege.localeCompare(b.privilege),
     },
     {
       title: 'Grant Option',
@@ -326,6 +329,7 @@ function Permissions() {
       width: 120,
       render: (isGrantable: boolean) =>
         isGrantable ? <Tag color="purple">WITH GRANT</Tag> : '-',
+      sorter: (a: Permission, b: Permission) => Number(a.isGrantable) - Number(b.isGrantable),
     },
     {
       title: 'Actions',
@@ -442,7 +446,7 @@ function Permissions() {
                     style={{ width: 120 }}
                     size="middle"
                   >
-                    <Option value="all">All Columns</Option>
+                    <Option value="all">All</Option>
                     <Option value="database">Database</Option>
                     <Option value="table">Table</Option>
                     <Option value="privilege">Privilege</Option>

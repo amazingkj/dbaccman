@@ -29,9 +29,16 @@ apiClient.interceptors.request.use(
   }
 )
 
-// Response interceptor - Handle auth errors
+// Response interceptor - Handle auth errors and refresh session
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Refresh session timeout on successful API calls
+    const { isAuthenticated, updateLastActivity } = useAuthStore.getState()
+    if (isAuthenticated) {
+      updateLastActivity()
+    }
+    return response
+  },
   (error: AxiosError) => {
     // Only redirect on 401 if NOT on login page (to allow login error display)
     if (error.response?.status === 401) {

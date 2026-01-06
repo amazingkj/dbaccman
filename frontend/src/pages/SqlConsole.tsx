@@ -28,11 +28,9 @@ import {
   UserOutlined,
   CodeOutlined,
   DatabaseOutlined,
-  SwapOutlined,
+  KeyOutlined,
 } from '@ant-design/icons'
-import { queryApi, type QueryResult, type AuditLogEntry, type SchemaInfo } from '../api/query'
-import { accountsApi } from '../api/accounts'
-import type { Account } from '../types'
+import { queryApi, type QueryResult, type SchemaInfo } from '../api/query'
 import { useAuthStore } from '../store/authStore'
 
 const { Title, Text } = Typography
@@ -51,15 +49,14 @@ function SqlConsole() {
   const { user } = useAuthStore()
   const [query, setQuery] = useState('')
   const [selectedAccount, setSelectedAccount] = useState<string | undefined>()
-  const [accounts, setAccounts] = useState<Account[]>([])
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<QueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<QueryHistory[]>([])
-  const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>([])
   const [activeTab, setActiveTab] = useState('result')
   const [schemaInfo, setSchemaInfo] = useState<SchemaInfo | null>(null)
   const [schemaLoading, setSchemaLoading] = useState(false)
+  const [lastClearedQuery, setLastClearedQuery] = useState<string | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const textAreaRef = useRef<any>(null)
 
@@ -71,15 +68,6 @@ function SqlConsole() {
       default: return 'default'
     }
   }
-
-  const fetchAccounts = useCallback(async () => {
-    try {
-      const response = await accountsApi.list()
-      setAccounts(response.data)
-    } catch {
-      // Ignore error - accounts list is optional
-    }
-  }, [])
 
   const fetchSchemas = useCallback(async () => {
     setSchemaLoading(true)
@@ -96,28 +84,19 @@ function SqlConsole() {
   const handleSwitchSchema = async (schema: string) => {
     try {
       await queryApi.switchSchema(schema)
-      message.success(`Switched to schema: ${schema}`)
+      message.success(`Schema applied: ${schema}`)
       fetchSchemas() // Refresh current schema
     } catch (err: unknown) {
       const errorResponse = err as { response?: { data?: { error?: string } } }
-      const errorMsg = errorResponse.response?.data?.error || 'Failed to switch schema'
+      const errorMsg = errorResponse.response?.data?.error || 'Failed to apply schema'
       message.error(errorMsg)
     }
   }
 
-  const fetchAuditLogs = useCallback(async () => {
-    try {
-      const response = await queryApi.getAuditLogs({ limit: 100 })
-      setAuditLogs(response.data)
-    } catch {
-      // Ignore error
-    }
-  }, [])
 
   useEffect(() => {
-    fetchAccounts()
     fetchSchemas()
-  }, [fetchAccounts, fetchSchemas])
+  }, [fetchSchemas])
 
   const executeQuery = async () => {
     if (!query.trim()) {
@@ -175,6 +154,13 @@ function SqlConsole() {
       e.preventDefault()
       executeQuery()
     }
+    // Ctrl+Z to restore cleared query
+    if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !query && lastClearedQuery) {
+      e.preventDefault()
+      setQuery(lastClearedQuery)
+      setLastClearedQuery(null)
+      message.info('Query restored')
+    }
   }
 
   const loadFromHistory = (item: QueryHistory) => {
@@ -188,26 +174,49 @@ function SqlConsole() {
   }
 
   const clearConsole = () => {
+    if (query.trim()) {
+      setLastClearedQuery(query)
+    }
     setQuery('')
     setResult(null)
     setError(null)
     textAreaRef.current?.focus()
   }
 
-  const columns = result?.columns.map((col, index) => ({
-    title: col,
-    dataIndex: index.toString(),
-    key: col,
-    ellipsis: true,
-    width: 150,
-    render: (value: string | null) => (
-      <Tooltip title={value}>
-        <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
-          {value === null ? <Text type="secondary">NULL</Text> : value}
-        </span>
-      </Tooltip>
-    ),
-  })) || []
+  const columns = result?.columns.map((col, index) => {
+    const meta = result?.columnMetadata?.[index]
+    const isPrimaryKey = meta?.isPrimaryKey || meta?.isAutoIncrement
+    const columnType = meta?.type || ''
+
+    return {
+      title: (
+        <Space size={4}>
+          {isPrimaryKey && (
+            <Tooltip title="Primary Key">
+              <KeyOutlined style={{ color: '#faad14', fontSize: 12 }} />
+            </Tooltip>
+          )}
+          <span>{col}</span>
+          {columnType && (
+            <Text type="secondary" style={{ fontSize: 10, fontWeight: 'normal' }}>
+              ({columnType})
+            </Text>
+          )}
+        </Space>
+      ),
+      dataIndex: index.toString(),
+      key: col,
+      ellipsis: true,
+      width: 150,
+      render: (value: string | null) => (
+        <Tooltip title={value}>
+          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>
+            {value === null ? <Text type="secondary">NULL</Text> : value}
+          </span>
+        </Tooltip>
+      ),
+    }
+  }) || []
 
   const dataSource = result?.rows.map((row, rowIndex) => {
     const rowData: Record<string, string | null> = { key: rowIndex.toString() }
@@ -253,40 +262,25 @@ function SqlConsole() {
                   </Tag>
                 </Space>
               </Col>
+              <Col flex="auto" />
               <Col>
                 <Space>
-                  <SwapOutlined />
+                  <Text type="secondary">Apply Schema:</Text>
                   <Select
-                    placeholder="Switch schema..."
-                    style={{ width: 200 }}
+                    placeholder="Select schema"
+                    style={{ width: 180 }}
                     showSearch
                     loading={schemaLoading}
-                    value={undefined}
-                    onChange={handleSwitchSchema}
+                    value={schemaInfo?.currentSchema}
+                    onChange={(schema) => {
+                      handleSwitchSchema(schema)
+                      setSelectedAccount(schema)
+                    }}
                     optionFilterProp="label"
                     options={schemaInfo?.availableSchemas.map(schema => ({
                       value: schema,
                       label: schema,
                     })) || []}
-                  />
-                </Space>
-              </Col>
-              <Col flex="auto" />
-              <Col>
-                <Space>
-                  <UserOutlined />
-                  <Select
-                    placeholder="Run as account"
-                    style={{ width: 180 }}
-                    allowClear
-                    showSearch
-                    value={selectedAccount}
-                    onChange={setSelectedAccount}
-                    optionFilterProp="label"
-                    options={accounts.map(acc => ({
-                      value: acc.username,
-                      label: acc.username,
-                    }))}
                   />
                 </Space>
               </Col>
@@ -306,15 +300,6 @@ function SqlConsole() {
                 onClick={clearConsole}
               >
                 Clear
-              </Button>
-              <Button
-                icon={<HistoryOutlined />}
-                onClick={() => {
-                  fetchAuditLogs()
-                  setActiveTab('audit')
-                }}
-              >
-                Audit Logs
               </Button>
             </Space>
 
@@ -400,6 +385,9 @@ function SqlConsole() {
                               pageSizeOptions: ['20', '50', '100', '200'],
                               showTotal: (total) => `Total ${total} rows`,
                             }}
+                            style={{
+                              fontFamily: "'Consolas', 'Monaco', 'Courier New', monospace",
+                            }}
                           />
                         </>
                       )}
@@ -433,6 +421,13 @@ function SqlConsole() {
                       size="small"
                       dataSource={history}
                       locale={{ emptyText: 'No query history' }}
+                      pagination={{
+                        pageSize: 10,
+                        size: 'small',
+                        showSizeChanger: true,
+                        pageSizeOptions: ['10', '20', '50'],
+                        showTotal: (total) => `Total ${total} queries`,
+                      }}
                       renderItem={(item) => (
                         <List.Item
                           actions={[
@@ -492,64 +487,6 @@ function SqlConsole() {
                                 {item.query.substring(0, 100)}
                                 {item.query.length > 100 && '...'}
                               </Text>
-                            }
-                          />
-                        </List.Item>
-                      )}
-                    />
-                  ),
-                },
-                {
-                  key: 'audit',
-                  label: (
-                    <span>
-                      <ClockCircleOutlined /> Audit Logs
-                    </span>
-                  ),
-                  children: (
-                    <List
-                      size="small"
-                      dataSource={auditLogs}
-                      locale={{ emptyText: 'No audit logs' }}
-                      renderItem={(item) => (
-                        <List.Item>
-                          <List.Item.Meta
-                            title={
-                              <Space>
-                                <Tag color={
-                                  item.action === 'LOGIN' ? 'green' :
-                                  item.action === 'LOGIN_FAILED' ? 'red' :
-                                  item.action === 'LOGOUT' ? 'orange' :
-                                  item.action === 'QUERY_EXECUTE' ? 'blue' :
-                                  'default'
-                                }>
-                                  {item.action}
-                                </Tag>
-                                <Text type="secondary" style={{ fontSize: 12 }}>
-                                  {item.timestamp}
-                                </Text>
-                                {item.user && (
-                                  <Text strong>{item.user}</Text>
-                                )}
-                                {item.ipAddress && (
-                                  <Tag>{item.ipAddress}</Tag>
-                                )}
-                              </Space>
-                            }
-                            description={
-                              <div>
-                                <Text style={{ fontSize: 12 }}>{item.message}</Text>
-                                {item.target && (
-                                  <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-                                    Target: {item.target}
-                                  </Text>
-                                )}
-                                {item.details && (
-                                  <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-                                    - {item.details}
-                                  </Text>
-                                )}
-                              </div>
                             }
                           />
                         </List.Item>

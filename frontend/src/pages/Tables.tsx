@@ -133,7 +133,7 @@ function Tables() {
   const [searchText, setSearchText] = useState('')
   const [gatheringStats, setGatheringStats] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(15)
+  const [pageSize, setPageSize] = useState(10)
 
   useEffect(() => {
     fetchDatabases()
@@ -299,6 +299,12 @@ function Tables() {
       width: 160,
       ellipsis: true,
       render: (time: string | null) => time || '-',
+      sorter: (a: TableInfo, b: TableInfo) => {
+        if (!a.createTime && !b.createTime) return 0
+        if (!a.createTime) return 1
+        if (!b.createTime) return -1
+        return a.createTime.localeCompare(b.createTime)
+      },
     },
     {
       title: 'Actions',
@@ -317,7 +323,14 @@ function Tables() {
   ]
 
   const columnTableColumns = [
-    { title: 'Name', dataIndex: 'name', key: 'name', width: 150, ellipsis: true },
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      width: 150,
+      ellipsis: true,
+      sorter: (a: ColumnInfo, b: ColumnInfo) => a.name.localeCompare(b.name),
+    },
     {
       title: 'Type',
       dataIndex: 'type',
@@ -325,6 +338,7 @@ function Tables() {
       width: 120,
       ellipsis: true,
       render: (type: string) => <Tag>{type}</Tag>,
+      sorter: (a: ColumnInfo, b: ColumnInfo) => a.type.localeCompare(b.type),
     },
     {
       title: 'Nullable',
@@ -333,6 +347,7 @@ function Tables() {
       width: 80,
       render: (nullable: boolean) =>
         nullable ? <Tag color="green">YES</Tag> : <Tag color="red">NO</Tag>,
+      sorter: (a: ColumnInfo, b: ColumnInfo) => Number(a.nullable) - Number(b.nullable),
     },
     {
       title: 'Key',
@@ -344,6 +359,7 @@ function Tables() {
         const color = key === 'PRI' ? 'gold' : key === 'UNI' ? 'purple' : 'default'
         return <Tag color={color}>{key}</Tag>
       },
+      sorter: (a: ColumnInfo, b: ColumnInfo) => (a.key || '').localeCompare(b.key || ''),
     },
     {
       title: 'Default',
@@ -352,6 +368,7 @@ function Tables() {
       width: 100,
       ellipsis: true,
       render: (val: string | null) => val || '-',
+      sorter: (a: ColumnInfo, b: ColumnInfo) => (a.defaultValue || '').localeCompare(b.defaultValue || ''),
     },
     {
       title: 'Extra',
@@ -361,16 +378,23 @@ function Tables() {
       ellipsis: true,
       render: (extra: string | null) =>
         extra ? <Tag color="cyan">{extra}</Tag> : '-',
+      sorter: (a: ColumnInfo, b: ColumnInfo) => (a.extra || '').localeCompare(b.extra || ''),
     },
   ]
 
   const indexTableColumns = [
-    { title: 'Name', dataIndex: 'name', key: 'name' },
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      key: 'name',
+      sorter: (a: IndexInfo, b: IndexInfo) => a.name.localeCompare(b.name),
+    },
     {
       title: 'Columns',
       dataIndex: 'columns',
       key: 'columns',
       render: (cols: string[]) => cols.join(', '),
+      sorter: (a: IndexInfo, b: IndexInfo) => a.columns.join(',').localeCompare(b.columns.join(',')),
     },
     {
       title: 'Unique',
@@ -378,8 +402,14 @@ function Tables() {
       key: 'unique',
       render: (unique: boolean) =>
         unique ? <Tag color="purple">UNIQUE</Tag> : <Tag>NON-UNIQUE</Tag>,
+      sorter: (a: IndexInfo, b: IndexInfo) => Number(a.unique) - Number(b.unique),
     },
-    { title: 'Type', dataIndex: 'type', key: 'type' },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      sorter: (a: IndexInfo, b: IndexInfo) => (a.type || '').localeCompare(b.type || ''),
+    },
   ]
 
   const totalSize = databases.reduce((sum, db) => sum + db.size, 0)

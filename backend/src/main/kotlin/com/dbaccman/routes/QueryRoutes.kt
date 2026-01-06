@@ -35,8 +35,18 @@ data class SchemaInfo(
 )
 
 @Serializable
+data class ColumnMetadata(
+    val name: String,
+    val type: String,
+    val isAutoIncrement: Boolean = false,
+    val isNullable: Boolean = true,
+    val isPrimaryKey: Boolean = false
+)
+
+@Serializable
 data class QueryResultResponse(
     val columns: List<String>,
+    val columnMetadata: List<ColumnMetadata>? = null,
     val rows: List<List<String?>>,
     val rowCount: Int,
     val executionTimeMs: Long,
@@ -81,6 +91,15 @@ fun Route.queryRoutes() {
 
                     call.respond(QueryResultResponse(
                         columns = result.columns,
+                        columnMetadata = result.columnMetadata?.map { meta ->
+                            ColumnMetadata(
+                                name = meta.name,
+                                type = meta.type,
+                                isAutoIncrement = meta.isAutoIncrement,
+                                isNullable = meta.isNullable,
+                                isPrimaryKey = meta.isPrimaryKey
+                            )
+                        },
                         rows = result.rows.map { row -> row.map { it?.toString() } },
                         rowCount = result.rowCount,
                         executionTimeMs = result.executionTimeMs,

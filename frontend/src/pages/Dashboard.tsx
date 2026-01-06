@@ -11,8 +11,7 @@ import {
   Button,
   Spin,
   Progress,
-  Tooltip,
-  Divider,
+  message,
 } from 'antd'
 import {
   UserOutlined,
@@ -206,36 +205,6 @@ function AdminDashboard() {
   const healthColor = healthScore.status === 'healthy' ? '#52c41a'
     : healthScore.status === 'warning' ? '#faad14' : '#ff4d4f'
 
-  // Health score tooltip content
-  const healthTooltipContent = (
-    <div style={{ minWidth: 250 }}>
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>Health Score Breakdown</div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span><UserOutlined /> Account</span>
-        <span style={{ fontWeight: 500 }}>{healthScore.accountScore}/40</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span><ThunderboltOutlined /> Session</span>
-        <span style={{ fontWeight: 500 }}>{healthScore.sessionScore}/30</span>
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span><HddOutlined /> Storage</span>
-        <span style={{ fontWeight: 500 }}>{healthScore.storageScore}/30</span>
-      </div>
-      {healthScore.issues.length > 0 && (
-        <>
-          <Divider style={{ margin: '8px 0', borderColor: 'rgba(255,255,255,0.2)' }} />
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>Issues</div>
-          {healthScore.issues.map((issue, idx) => (
-            <div key={idx} style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)' }}>
-              • {issue}
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  )
-
   return (
     <div>
       {/* Header */}
@@ -317,10 +286,17 @@ function AdminDashboard() {
       {/* Health Score Card */}
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={24}>
-          <Tooltip title={healthTooltipContent} placement="bottom" overlayStyle={{ maxWidth: 320 }}>
-            <Card
+          <Card
               style={{ borderRadius: 8, cursor: 'pointer' }}
               styles={{ body: { padding: '16px 24px' } }}
+              onClick={() => {
+                if (healthScore.issues.length > 0) {
+                  // Show alerts popup
+                  setAlertsDismissed(false)
+                } else {
+                  message.success('All systems are running normally')
+                }
+              }}
             >
               <Row align="middle" gutter={24}>
                 <Col>
@@ -378,8 +354,7 @@ function AdminDashboard() {
                   </Space>
                 </Col>
               </Row>
-            </Card>
-          </Tooltip>
+          </Card>
         </Col>
       </Row>
 

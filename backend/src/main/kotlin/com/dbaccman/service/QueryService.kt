@@ -3,8 +3,17 @@ package com.dbaccman.service
 import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.util.AuditLogger
 
+data class ColumnMeta(
+    val name: String,
+    val type: String,
+    val isAutoIncrement: Boolean = false,
+    val isNullable: Boolean = true,
+    val isPrimaryKey: Boolean = false
+)
+
 data class QueryResult(
     val columns: List<String>,
+    val columnMetadata: List<ColumnMeta>? = null,
     val rows: List<List<Any?>>,
     val rowCount: Int,
     val executionTimeMs: Long,
@@ -85,6 +94,24 @@ class QueryService {
                                 val columnCount = metaData.columnCount
 
                                 val columns = (1..columnCount).map { metaData.getColumnLabel(it) }
+
+                                // Extract column metadata
+                                val columnMeta = (1..columnCount).map { i ->
+                                    val isAutoIncrement = try { metaData.isAutoIncrement(i) } catch (_: Exception) { false }
+                                    val isNullable = try {
+                                        metaData.isNullable(i) != java.sql.ResultSetMetaData.columnNoNulls
+                                    } catch (_: Exception) { true }
+                                    val typeName = try { metaData.getColumnTypeName(i) } catch (_: Exception) { "UNKNOWN" }
+
+                                    ColumnMeta(
+                                        name = metaData.getColumnLabel(i),
+                                        type = typeName,
+                                        isAutoIncrement = isAutoIncrement,
+                                        isNullable = isNullable,
+                                        isPrimaryKey = isAutoIncrement // Auto-increment columns are typically PKs
+                                    )
+                                }
+
                                 val rows = mutableListOf<List<Any?>>()
 
                                 while (rs.next() && rows.size < rowLimit) {
@@ -110,6 +137,7 @@ class QueryService {
 
                                 QueryResult(
                                     columns = columns,
+                                    columnMetadata = columnMeta,
                                     rows = rows,
                                     rowCount = rows.size,
                                     executionTimeMs = executionTime,

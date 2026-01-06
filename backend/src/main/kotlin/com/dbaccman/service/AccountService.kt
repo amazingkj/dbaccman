@@ -3,8 +3,10 @@ package com.dbaccman.service
 import com.dbaccman.config.SessionConnectionManager
 import com.dbaccman.config.useOracleScriptContext
 import com.dbaccman.config.useSessionConnectionWithDialect
+import com.dbaccman.dialect.DatabaseDialect
 import com.dbaccman.dialect.MySQLDialect
 import com.dbaccman.dialect.OracleDialect
+import com.dbaccman.dialect.PostgreSQLDialect
 import com.dbaccman.model.*
 import com.dbaccman.util.AuditLogger
 import kotlinx.coroutines.*
@@ -14,6 +16,49 @@ import java.sql.SQLException
 
 class AccountService {
     private val logger = LoggerFactory.getLogger(AccountService::class.java)
+
+    /**
+     * Build ORDER BY clause based on sort parameters
+     */
+    private fun buildOrderByClause(sortBy: String?, sortOrder: String, dialect: DatabaseDialect): String {
+        if (sortBy == null) return ""
+
+        val direction = if (sortOrder.lowercase() == "desc") "DESC" else "ASC"
+
+        // Map frontend field names to database column names
+        // These must match the actual column names in the FROM clause tables
+        val columnMap = when (dialect) {
+            is OracleDialect -> mapOf(
+                "username" to "USERNAME",
+                "passwordLastChanged" to "PASSWORD_CHANGE_DATE",
+                "passwordLifetime" to "TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE)",
+                "accountLocked" to "ACCOUNT_STATUS"
+            )
+            is MySQLDialect -> mapOf(
+                "username" to "user",
+                "host" to "host",
+                "passwordLastChanged" to "password_last_changed",
+                "passwordLifetime" to "password_lifetime",
+                "accountLocked" to "account_locked"
+            )
+            is PostgreSQLDialect -> mapOf(
+                "username" to "usename",
+                "passwordLastChanged" to "valuntil",
+                "accountLocked" to "rolcanlogin"
+            )
+            else -> emptyMap()
+        }
+
+        val column = columnMap[sortBy] ?: return ""
+
+        // Handle NULL values - put them at the end
+        // For accountLocked, reverse logic for PostgreSQL (rolcanlogin=false means locked)
+        return when (dialect) {
+            is OracleDialect -> "ORDER BY $column $direction NULLS LAST"
+            is PostgreSQLDialect -> "ORDER BY $column $direction NULLS LAST"
+            else -> "ORDER BY $column IS NULL, $column $direction"
+        }
+    }
 
     fun getAccountCount(sessionId: String): Int {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
@@ -29,7 +74,13 @@ class AccountService {
     /**
      * Get paginated accounts with stats.
      */
-    fun getPaginatedAccounts(sessionId: String, page: Int, pageSize: Int): PaginatedAccountsResponse {
+    fun getPaginatedAccounts(
+        sessionId: String,
+        page: Int,
+        pageSize: Int,
+        sortBy: String? = null,
+        sortOrder: String = "asc"
+    ): PaginatedAccountsResponse {
         val isContainerRoot = SessionConnectionManager.isContainerRoot(sessionId)
 
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
@@ -40,9 +91,10 @@ class AccountService {
                 }
             }
 
-            // 2. Get paginated data
+            // 2. Get paginated data with sorting
             val offset = (page - 1) * pageSize
-            val sql = dialect.getPaginatedAccountsQuery()
+            val orderByClause = buildOrderByClause(sortBy, sortOrder, dialect)
+            val sql = dialect.getPaginatedAccountsQuery(orderByClause)
 
             val accounts = conn.prepareStatement(sql).use { stmt ->
                 // Oracle uses OFFSET first, then FETCH (limit)

@@ -217,7 +217,7 @@ function Accounts() {
   // Pagination state
   const [pagination, setPagination] = useState<PaginationInfo>({
     page: 1,
-    pageSize: 15,
+    pageSize: 10,
     totalItems: 0,
     totalPages: 0,
   })
@@ -227,11 +227,20 @@ function Accounts() {
     activeAccounts: 0,
   })
 
-  const fetchAccounts = async (page = pagination.page, pageSize = pagination.pageSize) => {
+  // Sort state for server-side sorting
+  const [sortBy, setSortBy] = useState<string | undefined>(undefined)
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
+
+  const fetchAccounts = async (
+    page = pagination.page,
+    pageSize = pagination.pageSize,
+    currentSortBy = sortBy,
+    currentSortOrder = sortOrder
+  ) => {
     setLoading(true)
     try {
       const [paginatedRes, expiringRes] = await Promise.all([
-        accountsApi.listPaginated(page, pageSize),
+        accountsApi.listPaginated(page, pageSize, currentSortBy, currentSortOrder),
         accountsApi.getExpiring(30),
       ])
       setAccounts(paginatedRes.data.data)
@@ -522,7 +531,8 @@ function Accounts() {
       key: 'username',
       width: 150,
       ellipsis: true,
-      sorter: (a: Account, b: Account) => a.username.localeCompare(b.username),
+      sorter: true,  // Server-side sorting
+      sortOrder: sortBy === 'username' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : null,
     },
     {
       title: 'Host',
@@ -536,13 +546,8 @@ function Accounts() {
       dataIndex: 'passwordLifetime',
       key: 'passwordLifetime',
       width: 120,
-      sorter: (a: Account, b: Account) => {
-        // null (Never) should be at the end when sorting ascending
-        if (a.passwordLifetime === null && b.passwordLifetime === null) return 0
-        if (a.passwordLifetime === null) return 1
-        if (b.passwordLifetime === null) return -1
-        return (a.passwordLifetime || 0) - (b.passwordLifetime || 0)
-      },
+      sorter: true,  // Server-side sorting
+      sortOrder: sortBy === 'passwordLifetime' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : null,
       render: (days: number | null) =>
         days ? `${days} days` : <Tag color="blue">Never</Tag>,
     },
@@ -551,6 +556,8 @@ function Accounts() {
       dataIndex: 'accountLocked',
       key: 'accountLocked',
       width: 100,
+      sorter: true,  // Server-side sorting
+      sortOrder: sortBy === 'accountLocked' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : null,
       render: (locked: boolean) =>
         locked ? (
           <Tag color="red" icon={<LockOutlined />}>
@@ -568,14 +575,8 @@ function Accounts() {
       key: 'passwordLastChanged',
       width: 160,
       ellipsis: true,
-      sorter: (a: Account, b: Account) => {
-        // null should be at the end
-        if (!a.passwordLastChanged && !b.passwordLastChanged) return 0
-        if (!a.passwordLastChanged) return 1
-        if (!b.passwordLastChanged) return -1
-        return new Date(a.passwordLastChanged).getTime() - new Date(b.passwordLastChanged).getTime()
-      },
-      defaultSortOrder: 'descend' as const,
+      sorter: true,  // Server-side sorting
+      sortOrder: sortBy === 'passwordLastChanged' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : null,
       render: (date: string | null) => formatToLocalTime(date),
     },
     {
@@ -632,7 +633,7 @@ function Accounts() {
         )
       },
     },
-  ], [pagination.page, pagination.pageSize])
+  ], [pagination.page, pagination.pageSize, sortBy, sortOrder])
 
   return (
     <div>
@@ -762,7 +763,7 @@ function Accounts() {
               style={{ width: 120 }}
               size="middle"
             >
-              <Select.Option value="all">All Columns</Select.Option>
+              <Select.Option value="all">All</Select.Option>
               <Select.Option value="username">Username</Select.Option>
               <Select.Option value="host">Host</Select.Option>
               <Select.Option value="status">Status</Select.Option>
@@ -790,9 +791,24 @@ function Accounts() {
           showSizeChanger: true,
           pageSizeOptions: ['10', '15', '20', '50', '100'],
           showTotal: (total, range) => `${range[0]}-${range[1]} of ${total} accounts`,
-          onChange: (page, pageSize) => {
-            fetchAccounts(page, pageSize)
-          },
+        }}
+        onChange={(paginationConfig, _filters, sorter) => {
+          // Handle sorting
+          const sorterObj = Array.isArray(sorter) ? sorter[0] : sorter
+          const newSortBy = sorterObj?.order ? (sorterObj.field as string) : undefined
+          const newSortOrder = sorterObj?.order === 'descend' ? 'desc' : 'asc'
+
+          // Update sort state
+          setSortBy(newSortBy)
+          setSortOrder(newSortOrder as 'asc' | 'desc')
+
+          // Fetch with new page/sort parameters
+          fetchAccounts(
+            paginationConfig.current || 1,
+            paginationConfig.pageSize || 15,
+            newSortBy,
+            newSortOrder as 'asc' | 'desc'
+          )
         }}
         rowSelection={{
           selectedRowKeys,

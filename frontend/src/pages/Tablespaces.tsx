@@ -144,7 +144,7 @@ function Tablespaces() {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
   const [bulkDeleting, setBulkDeleting] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
-  const [pageSize, setPageSize] = useState(15)
+  const [pageSize, setPageSize] = useState(10)
   const [form] = Form.useForm()
   const [moveForm] = Form.useForm()
 
@@ -357,6 +357,7 @@ function Tablespaces() {
           </Button>
         </Tooltip>
       ),
+      sorter: (a: TablespaceInfo, b: TablespaceInfo) => a.name.localeCompare(b.name),
     },
     {
       title: 'Type',
@@ -368,6 +369,7 @@ function Tablespaces() {
           {type}
         </Tag>
       ),
+      sorter: (a: TablespaceInfo, b: TablespaceInfo) => a.spaceType.localeCompare(b.spaceType),
     },
     {
       title: 'File Size',
@@ -383,6 +385,7 @@ function Tablespaces() {
       key: 'allocatedSize',
       width: 100,
       render: (size: number) => formatBytes(size),
+      sorter: (a: TablespaceInfo, b: TablespaceInfo) => a.allocatedSize - b.allocatedSize,
     },
     {
       title: 'Usage',
@@ -417,6 +420,7 @@ function Tablespaces() {
       render: (state: string) => (
         <Tag color={state === 'active' ? 'green' : 'red'}>{state}</Tag>
       ),
+      sorter: (a: TablespaceInfo, b: TablespaceInfo) => a.state.localeCompare(b.state),
     },
     {
       title: 'Actions',
@@ -560,7 +564,7 @@ function Tablespaces() {
               style={{ width: 120 }}
               size="middle"
             >
-              <Option value="all">All Columns</Option>
+              <Option value="all">All</Option>
               <Option value="name">Name</Option>
               <Option value="spaceType">Type</Option>
               <Option value="state">State</Option>

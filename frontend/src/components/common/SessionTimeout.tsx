@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState } from 'react'
 import { Modal, Typography, Progress } from 'antd'
 import { ClockCircleOutlined } from '@ant-design/icons'
 import { useAuthStore, SESSION_TIMEOUT_MS, SESSION_WARNING_MS } from '../../store/authStore'
@@ -12,29 +12,8 @@ function SessionTimeout() {
   const [showWarning, setShowWarning] = useState(false)
   const [remainingTime, setRemainingTime] = useState(0)
 
-  // Track user activity
-  const handleActivity = useCallback(() => {
-    if (isAuthenticated && !showWarning) {
-      updateLastActivity()
-    }
-  }, [isAuthenticated, showWarning, updateLastActivity])
-
-  // Add activity listeners
-  useEffect(() => {
-    if (!isAuthenticated) return
-
-    const events = ['mousedown', 'keydown', 'scroll', 'touchstart', 'click']
-
-    events.forEach(event => {
-      window.addEventListener(event, handleActivity, { passive: true })
-    })
-
-    return () => {
-      events.forEach(event => {
-        window.removeEventListener(event, handleActivity)
-      })
-    }
-  }, [isAuthenticated, handleActivity])
+  // Session is now refreshed only on API calls (via axios interceptor)
+  // No passive event listeners needed
 
   // Check session timeout
   useEffect(() => {

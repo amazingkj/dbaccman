@@ -170,13 +170,13 @@ function Sessions() {
   const [activeTab, setActiveTab] = useState<'query' | 'connection'>('query')
   const [searchText, setSearchText] = useState('')
   const [searchColumn, setSearchColumn] = useState<string>('all')
-  const [showSlowOnly, setShowSlowOnly] = useState(searchParams.get('filter') === 'slow')
+  const [showSlowOnly, setShowSlowOnly] = useState(() => searchParams.get('filter') === 'slow')
   const [querySelectedKeys, setQuerySelectedKeys] = useState<React.Key[]>([])
   const [connectionSelectedKeys, setConnectionSelectedKeys] = useState<React.Key[]>([])
   const [bulkKilling, setBulkKilling] = useState(false)
-  const [queryPageSize, setQueryPageSize] = useState(15)
+  const [queryPageSize, setQueryPageSize] = useState(10)
   const [queryCurrentPage, setQueryCurrentPage] = useState(1)
-  const [connectionPageSize, setConnectionPageSize] = useState(15)
+  const [connectionPageSize, setConnectionPageSize] = useState(10)
   const [connectionCurrentPage, setConnectionCurrentPage] = useState(1)
 
   // Get current tab's selected keys
@@ -198,15 +198,27 @@ function Sessions() {
     fetchSessions()
   }, [fetchSessions])
 
+  // Sync showSlowOnly with URL params (for navigation from Dashboard)
+  useEffect(() => {
+    const filterParam = searchParams.get('filter')
+    const isSlow = filterParam === 'slow'
+    setShowSlowOnly(isSlow)
+    // Switch to query tab when filtering slow queries
+    if (isSlow) {
+      setActiveTab('query')
+    }
+  }, [searchParams])
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | null = null
-    if (autoRefresh) {
+    // Pause auto-refresh during bulk kill operations
+    if (autoRefresh && !bulkKilling) {
       interval = setInterval(fetchSessions, 5000)
     }
     return () => {
       if (interval) clearInterval(interval)
     }
-  }, [autoRefresh, fetchSessions])
+  }, [autoRefresh, bulkKilling, fetchSessions])
 
   const handleKillSession = async (pid: number, serialNum?: number | null) => {
     try {
@@ -418,6 +430,7 @@ function Sessions() {
           {user}
         </Space>
       ),
+      sorter: (a: SessionInfo, b: SessionInfo) => a.user.localeCompare(b.user),
     },
     {
       title: 'Host',
@@ -425,6 +438,7 @@ function Sessions() {
       key: 'host',
       width: 150,
       ellipsis: true,
+      sorter: (a: SessionInfo, b: SessionInfo) => a.host.localeCompare(b.host),
     },
     {
       title: 'Database',
@@ -440,6 +454,7 @@ function Sessions() {
         ) : (
           '-'
         ),
+      sorter: (a: SessionInfo, b: SessionInfo) => (a.database || '').localeCompare(b.database || ''),
     },
     {
       title: 'Command',
@@ -449,6 +464,7 @@ function Sessions() {
       render: (command: string) => (
         <Tag color={getCommandColor(command)}>{command}</Tag>
       ),
+      sorter: (a: SessionInfo, b: SessionInfo) => a.command.localeCompare(b.command),
     },
     {
       title: 'Time',
@@ -475,6 +491,7 @@ function Sessions() {
       width: 120,
       ellipsis: true,
       render: (state: string | null) => state || '-',
+      sorter: (a: SessionInfo, b: SessionInfo) => (a.state || '').localeCompare(b.state || ''),
     },
     {
       title: 'Query',
@@ -500,6 +517,7 @@ function Sessions() {
         ) : (
           '-'
         ),
+      sorter: (a: SessionInfo, b: SessionInfo) => (a.query || '').localeCompare(b.query || ''),
     },
     {
       title: 'Actions',
@@ -650,7 +668,7 @@ function Sessions() {
               style={{ width: 120 }}
               size="middle"
             >
-              <Select.Option value="all">All Columns</Select.Option>
+              <Select.Option value="all">All</Select.Option>
               <Select.Option value="user">User</Select.Option>
               <Select.Option value="host">Host</Select.Option>
               <Select.Option value="database">Database</Select.Option>

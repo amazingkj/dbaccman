@@ -1,7 +1,16 @@
 import apiClient from './client'
 
+export interface ColumnMetadata {
+  name: string
+  type: string
+  isAutoIncrement: boolean
+  isNullable: boolean
+  isPrimaryKey: boolean
+}
+
 export interface QueryResult {
   columns: string[]
+  columnMetadata?: ColumnMetadata[]
   rows: (string | null)[][]
   rowCount: number
   executionTimeMs: number

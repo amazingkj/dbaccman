@@ -230,6 +230,8 @@ class TableService {
             val sql = dialect.getGatherStatsSql(schema, table)
             if (sql != null) {
                 conn.createStatement().use { stmt ->
+                    // Set query timeout: 60 seconds for single table, 120 seconds for schema
+                    stmt.queryTimeout = if (table != null) 60 else 120
                     stmt.execute(sql)
                 }
                 AuditLogger.log(
