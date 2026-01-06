@@ -319,4 +319,278 @@ class MySQLDialectTest {
         val sql = dialect.getSwitchSchemaSql("testdb")
         assertEquals("USE `testdb`", sql)
     }
+
+    @Test
+    @DisplayName("Current schema query should use DATABASE() function")
+    fun testCurrentSchemaQuery() {
+        val query = dialect.getCurrentSchemaQuery()
+        assertEquals("SELECT DATABASE() AS current_schema", query)
+    }
+
+    @Test
+    @DisplayName("Available schemas query should exclude system schemas")
+    fun testAvailableSchemasQuery() {
+        val query = dialect.getAvailableSchemasQuery()
+        assertTrue(query.contains("SCHEMA_NAME"))
+        assertTrue(query.contains("information_schema.SCHEMATA"))
+        assertTrue(query.contains("'information_schema'"))
+        assertTrue(query.contains("'mysql'"))
+    }
+
+    // ==================== Password Escaping Tests ====================
+
+    @Test
+    @DisplayName("Create user SQL should escape backslash in password")
+    fun testCreateUserSqlWithBackslash() {
+        val sql = dialect.getCreateUserSql("testuser", "%", "pass\\word")
+        assertTrue(sql.contains("\\\\"))
+    }
+
+    @Test
+    @DisplayName("Create user SQL should escape both backslash and quote")
+    fun testCreateUserSqlWithBackslashAndQuote() {
+        val sql = dialect.getCreateUserSql("testuser", "%", "pa\\ss'word")
+        assertTrue(sql.contains("\\\\"))
+        assertTrue(sql.contains("\\'"))
+    }
+
+    // ==================== Query Content Validation Tests ====================
+
+    @Test
+    @DisplayName("All accounts query should select from mysql.user")
+    fun testAllAccountsQuery() {
+        val query = dialect.getAllAccountsQuery()
+        assertTrue(query.contains("mysql.user"))
+        assertTrue(query.contains("username"))
+        assertTrue(query.contains("password_last_changed"))
+        assertTrue(query.contains("account_locked"))
+        // Should exclude system users
+        assertTrue(query.contains("mysql.sys"))
+    }
+
+    @Test
+    @DisplayName("Account count query should count from mysql.user")
+    fun testAccountCountQuery() {
+        val query = dialect.getAccountCountQuery()
+        assertTrue(query.contains("COUNT(*)"))
+        assertTrue(query.contains("mysql.user"))
+    }
+
+    @Test
+    @DisplayName("Paginated accounts query should include LIMIT and OFFSET")
+    fun testPaginatedAccountsQuery() {
+        val query = dialect.getPaginatedAccountsQuery()
+        assertTrue(query.contains("LIMIT"))
+        assertTrue(query.contains("OFFSET"))
+    }
+
+    @Test
+    @DisplayName("Session stats query should calculate active and sleeping counts")
+    fun testSessionStatsQuery() {
+        val query = dialect.getSessionStatsQuery()
+        assertTrue(query.contains("COUNT(*)"))
+        assertTrue(query.contains("active"))
+        assertTrue(query.contains("sleeping"))
+        assertTrue(query.contains("long_running"))
+    }
+
+    @Test
+    @DisplayName("Long running queries query should have time threshold placeholder")
+    fun testLongRunningQueriesQuery() {
+        val query = dialect.getLongRunningQueriesQuery()
+        assertTrue(query.contains("time > ?"))
+        assertTrue(query.contains("ORDER BY time DESC"))
+    }
+
+    @Test
+    @DisplayName("Password expiry query should select from mysql.user")
+    fun testPasswordExpiryQuery() {
+        val query = dialect.getPasswordExpiryQuery()
+        assertTrue(query.contains("mysql.user"))
+        assertTrue(query.contains("password_lifetime"))
+        assertTrue(query.contains("days_until_expiry"))
+        assertTrue(query.contains("is_expired"))
+    }
+
+    @Test
+    @DisplayName("Password expiry days query should return days until expiry")
+    fun testPasswordExpiryDaysQuery() {
+        val query = dialect.getPasswordExpiryDaysQuery()
+        assertTrue(query.contains("days_until_expiry"))
+        assertTrue(query.contains("DATEDIFF"))
+    }
+
+    @Test
+    @DisplayName("Expiring accounts query should filter by days threshold")
+    fun testExpiringAccountsQuery() {
+        val query = dialect.getExpiringAccountsQuery()
+        assertTrue(query.contains("days_until_expiry"))
+        assertTrue(query.contains("< ?"))
+        assertTrue(query.contains(">= 0"))
+    }
+
+    @Test
+    @DisplayName("Databases query should aggregate table info")
+    fun testDatabasesQuery() {
+        val query = dialect.getDatabasesQuery()
+        assertTrue(query.contains("information_schema.schemata"))
+        assertTrue(query.contains("table_count"))
+        assertTrue(query.contains("total_rows"))
+        assertTrue(query.contains("total_size"))
+    }
+
+    @Test
+    @DisplayName("Tables query should filter by schema")
+    fun testTablesQuery() {
+        val query = dialect.getTablesQuery()
+        assertTrue(query.contains("information_schema.tables"))
+        assertTrue(query.contains("table_schema = ?"))
+        assertTrue(query.contains("BASE TABLE"))
+    }
+
+    @Test
+    @DisplayName("Table columns query should filter by schema and table")
+    fun testTableColumnsQuery() {
+        val query = dialect.getTableColumnsQuery()
+        assertTrue(query.contains("information_schema.columns"))
+        assertTrue(query.contains("table_schema = ?"))
+        assertTrue(query.contains("table_name = ?"))
+    }
+
+    @Test
+    @DisplayName("Indexes query should group by index name")
+    fun testIndexesQuery() {
+        val query = dialect.getIndexesQuery()
+        assertTrue(query.contains("information_schema.statistics"))
+        assertTrue(query.contains("GROUP_CONCAT"))
+        assertTrue(query.contains("GROUP BY index_name"))
+    }
+
+    @Test
+    @DisplayName("Schema privileges query should use information_schema")
+    fun testSchemaPrivilegesQuery() {
+        val query = dialect.getSchemaPrivilegesQuery()
+        assertTrue(query.contains("information_schema.SCHEMA_PRIVILEGES"))
+        assertTrue(query.contains("GRANTEE = ?"))
+    }
+
+    @Test
+    @DisplayName("Table privileges query should use information_schema")
+    fun testTablePrivilegesQuery() {
+        val query = dialect.getTablePrivilegesQuery()
+        assertTrue(query.contains("information_schema.TABLE_PRIVILEGES"))
+        assertTrue(query.contains("GRANTEE = ?"))
+    }
+
+    @Test
+    @DisplayName("Tablespaces query should select from INNODB_TABLESPACES")
+    fun testTablespacesQuery() {
+        val query = dialect.getTablespacesQuery()
+        assertTrue(query.contains("INNODB_TABLESPACES"))
+        assertTrue(query.contains("file_size"))
+        assertTrue(query.contains("allocated_size"))
+    }
+
+    @Test
+    @DisplayName("Tables in tablespace query should join with INNODB_TABLES")
+    fun testTablesInTablespaceQuery() {
+        val query = dialect.getTablesInTablespaceQuery()
+        assertTrue(query.contains("INNODB_TABLES"))
+        assertTrue(query.contains("INNODB_TABLESPACES"))
+        assertTrue(query.contains("WHERE ts.NAME = ?"))
+    }
+
+    @Test
+    @DisplayName("Admin check query should use SHOW GRANTS")
+    fun testAdminCheckQuery() {
+        assertEquals("SHOW GRANTS FOR CURRENT_USER()", dialect.getAdminCheckQuery())
+    }
+
+    // ==================== Select With Limit Tests ====================
+
+    @Test
+    @DisplayName("Select with limit should use LIMIT clause")
+    fun testSelectWithLimit() {
+        val sql = dialect.getSelectWithLimitSql("`testdb`.`users`", 100)
+        assertEquals("SELECT * FROM `testdb`.`users` LIMIT 100", sql)
+    }
+
+    @Test
+    @DisplayName("Select with limit should handle large limits")
+    fun testSelectWithLargeLimit() {
+        val sql = dialect.getSelectWithLimitSql("`db`.`table`", 50000)
+        assertTrue(sql.contains("LIMIT 50000"))
+    }
+
+    // ==================== Multi-Column Index Tests ====================
+
+    @Test
+    @DisplayName("Create index with multiple columns should include all columns")
+    fun testCreateIndexMultipleColumns() {
+        val sql = dialect.getCreateIndexSql("testdb", "users", "idx_name_email",
+            listOf("name", "email", "created_at"), false)
+        assertTrue(sql.contains("`name`, `email`, `created_at`"))
+    }
+
+    @Test
+    @DisplayName("Create unique index with multiple columns")
+    fun testCreateUniqueIndexMultipleColumns() {
+        val sql = dialect.getCreateIndexSql("testdb", "users", "idx_uniq",
+            listOf("col1", "col2"), true)
+        assertTrue(sql.contains("CREATE UNIQUE INDEX"))
+        assertTrue(sql.contains("`col1`, `col2`"))
+    }
+
+    // ==================== Edge Case Tests ====================
+
+    @Test
+    @DisplayName("Quote identifier with special characters")
+    fun testQuoteIdentifierSpecialChars() {
+        val result = dialect.quoteIdentifier("table-name")
+        assertEquals("`table-name`", result)
+    }
+
+    @Test
+    @DisplayName("Quote identifier with spaces")
+    fun testQuoteIdentifierWithSpaces() {
+        val result = dialect.quoteIdentifier("table name")
+        assertEquals("`table name`", result)
+    }
+
+    @Test
+    @DisplayName("Format grantee with special host")
+    fun testFormatGranteeWildcard() {
+        val grantee = dialect.formatGrantee("admin", "%")
+        assertEquals("'admin'@'%'", grantee)
+    }
+
+    @Test
+    @DisplayName("JDBC URL with custom port")
+    fun testJdbcUrlCustomPort() {
+        val url = dialect.getJdbcUrl("192.168.1.100", 13306, "production")
+        assertTrue(url.startsWith("jdbc:mysql://192.168.1.100:13306/production"))
+    }
+
+    @Test
+    @DisplayName("Kill session with different PID values")
+    fun testKillSessionVariousPids() {
+        assertEquals("KILL 1", dialect.getKillSessionSql(1, null))
+        assertEquals("KILL 999999", dialect.getKillSessionSql(999999, null))
+        assertEquals("KILL 0", dialect.getKillSessionSql(0, null))
+    }
+
+    @Test
+    @DisplayName("Create tablespace with custom engine")
+    fun testCreateTablespaceCustomEngine() {
+        val sql = dialect.getCreateTablespaceSql("myspace", "custom.ibd", "MyISAM")
+        assertTrue(sql.contains("ENGINE=MyISAM"))
+    }
+
+    @Test
+    @DisplayName("My password expiry query for regular users")
+    fun testMyPasswordExpiryQuery() {
+        val query = dialect.getMyPasswordExpiryQuery()
+        assertTrue(query.contains("CURRENT_USER()"))
+        assertTrue(query.contains("NULL as password_lifetime"))
+    }
 }

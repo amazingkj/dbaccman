@@ -174,6 +174,8 @@ function Sessions() {
   const [querySelectedKeys, setQuerySelectedKeys] = useState<React.Key[]>([])
   const [connectionSelectedKeys, setConnectionSelectedKeys] = useState<React.Key[]>([])
   const [bulkKilling, setBulkKilling] = useState(false)
+  const [queryPageSize, setQueryPageSize] = useState(15)
+  const [connectionPageSize, setConnectionPageSize] = useState(15)
 
   // Get current tab's selected keys
   const selectedRowKeys = activeTab === 'query' ? querySelectedKeys : connectionSelectedKeys
@@ -678,9 +680,10 @@ function Sessions() {
                   onChange: setQuerySelectedKeys,
                 }}
                 pagination={{
-                  defaultPageSize: 15,
+                  pageSize: queryPageSize,
                   showSizeChanger: true,
                   pageSizeOptions: ['10', '15', '20', '50', '100'],
+                  onShowSizeChange: (_, size) => setQueryPageSize(size),
                 }}
                 scroll={{ x: 1200 }}
               />
@@ -710,9 +713,10 @@ function Sessions() {
                   onChange: setConnectionSelectedKeys,
                 }}
                 pagination={{
-                  defaultPageSize: 15,
+                  pageSize: connectionPageSize,
                   showSizeChanger: true,
                   pageSizeOptions: ['10', '15', '20', '50', '100'],
+                  onShowSizeChange: (_, size) => setConnectionPageSize(size),
                 }}
                 scroll={{ x: 1200 }}
               />

@@ -1,10 +1,23 @@
 package com.dbaccman.service
 
+import com.dbaccman.config.SessionConnectionManager
+import com.dbaccman.dialect.DatabaseDialect
+import com.dbaccman.dialect.MySQLDialect
+import com.dbaccman.dialect.OracleDialect
+import com.dbaccman.dialect.PostgreSQLDialect
 import com.dbaccman.model.*
+import com.dbaccman.util.AuditLogger
+import io.mockk.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.Nested
+import java.sql.Connection
+import java.sql.PreparedStatement
+import java.sql.ResultSet
+import java.sql.Statement
 
 class TablespaceServiceTest {
 
@@ -13,6 +26,12 @@ class TablespaceServiceTest {
     @BeforeEach
     fun setUp() {
         tablespaceService = TablespaceService()
+        mockkObject(SessionConnectionManager)
+    }
+
+    @AfterEach
+    fun tearDown() {
+        unmockkAll()
     }
 
     @Test
@@ -263,5 +282,256 @@ class TablespaceServiceTest {
         assertEquals("LARGE", sortedBySize[0].name)
         assertEquals("MEDIUM", sortedBySize[1].name)
         assertEquals("SMALL", sortedBySize[2].name)
+    }
+
+    // ==================== Service Method Tests with Mocking ====================
+
+    @Nested
+    @DisplayName("Service Method Tests with Mocking")
+    inner class ServiceMethodTests {
+
+        @Test
+        @DisplayName("getTablespaces should return list from MySQL database")
+        fun testGetTablespacesMysql() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getTablespacesQuery() } returns "SELECT * FROM INFORMATION_SCHEMA.INNODB_TABLESPACES"
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.executeQuery(any()) } returns mockResultSet
+
+            // Mock result set to return two tablespaces
+            every { mockResultSet.next() } returnsMany listOf(true, true, false)
+            every { mockResultSet.getString("name") } returnsMany listOf("innodb_system", "innodb_file_per_table")
+            every { mockResultSet.getString("space_type") } returnsMany listOf("System", "General")
+            every { mockResultSet.getLong("file_size") } returnsMany listOf(104857600L, 209715200L)
+            every { mockResultSet.getLong("allocated_size") } returnsMany listOf(104857600L, 104857600L)
+            every { mockResultSet.getString("state") } returnsMany listOf("active", "active")
+
+            every { mockResultSet.close() } just Runs
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val tablespaces = tablespaceService.getTablespaces("test-session")
+
+            assertEquals(2, tablespaces.size)
+            assertEquals("innodb_system", tablespaces[0].name)
+            assertEquals("innodb_file_per_table", tablespaces[1].name)
+            verify { mockDialect.getTablespacesQuery() }
+        }
+
+        @Test
+        @DisplayName("getTablespaces should return list from Oracle database")
+        fun testGetTablespacesOracle() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockDialect = mockk<OracleDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getTablespacesQuery() } returns "SELECT * FROM DBA_TABLESPACES"
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.executeQuery(any()) } returns mockResultSet
+
+            every { mockResultSet.next() } returnsMany listOf(true, true, true, false)
+            every { mockResultSet.getString("name") } returnsMany listOf("SYSTEM", "USERS", "TEMP")
+            every { mockResultSet.getString("space_type") } returnsMany listOf("PERMANENT", "PERMANENT", "TEMPORARY")
+            every { mockResultSet.getLong("file_size") } returnsMany listOf(1073741824L, 536870912L, 268435456L)
+            every { mockResultSet.getLong("allocated_size") } returnsMany listOf(536870912L, 268435456L, 134217728L)
+            every { mockResultSet.getString("state") } returnsMany listOf("ONLINE", "ONLINE", "ONLINE")
+
+            every { mockResultSet.close() } just Runs
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val tablespaces = tablespaceService.getTablespaces("test-session")
+
+            assertEquals(3, tablespaces.size)
+            assertEquals("SYSTEM", tablespaces[0].name)
+            assertEquals("USERS", tablespaces[1].name)
+            assertEquals("TEMP", tablespaces[2].name)
+            verify { mockDialect.getTablespacesQuery() }
+        }
+
+        @Test
+        @DisplayName("getTablespaces should return empty list when no tablespaces exist")
+        fun testGetTablespacesEmpty() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getTablespacesQuery() } returns "SELECT * FROM INFORMATION_SCHEMA.INNODB_TABLESPACES"
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.executeQuery(any()) } returns mockResultSet
+            every { mockResultSet.next() } returns false
+            every { mockResultSet.close() } just Runs
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val tablespaces = tablespaceService.getTablespaces("test-session")
+
+            assertTrue(tablespaces.isEmpty())
+        }
+
+        @Test
+        @DisplayName("createTablespace should execute create statement")
+        fun testCreateTablespace() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            val request = CreateTablespaceRequest(
+                name = "NEW_TS",
+                dataFile = "/data/new_ts.ibd",
+                engine = "InnoDB"
+            )
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getCreateTablespaceSql("NEW_TS", "/data/new_ts.ibd", "InnoDB") } returns
+                "CREATE TABLESPACE NEW_TS ADD DATAFILE '/data/new_ts.ibd' ENGINE=InnoDB"
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.execute(any()) } returns true
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            // Mock AuditLogger
+            mockkObject(AuditLogger)
+            every { AuditLogger.log(any(), any()) } just Runs
+
+            tablespaceService.createTablespace("test-session", request)
+
+            verify { mockStatement.execute(any()) }
+            verify { AuditLogger.log("CREATE_TABLESPACE", "Created tablespace NEW_TS") }
+            unmockkObject(AuditLogger)
+        }
+
+        @Test
+        @DisplayName("dropTablespace should execute drop statement")
+        fun testDropTablespace() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockDialect = mockk<OracleDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getDropTablespaceSql("OLD_TS") } returns
+                "DROP TABLESPACE OLD_TS INCLUDING CONTENTS AND DATAFILES"
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.execute(any()) } returns true
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            mockkObject(AuditLogger)
+            every { AuditLogger.log(any(), any()) } just Runs
+
+            tablespaceService.dropTablespace("test-session", "OLD_TS")
+
+            verify { mockStatement.execute(any()) }
+            verify { AuditLogger.log("DROP_TABLESPACE", "Dropped tablespace OLD_TS") }
+            unmockkObject(AuditLogger)
+        }
+
+        @Test
+        @DisplayName("getTablesInTablespace should return tables for given tablespace")
+        fun testGetTablesInTablespace() {
+            val mockConnection = mockk<Connection>()
+            val mockPreparedStatement = mockk<PreparedStatement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getTablesInTablespaceQuery() } returns
+                "SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLESPACE_NAME = ?"
+            every { mockConnection.prepareStatement(any()) } returns mockPreparedStatement
+            every { mockPreparedStatement.setString(1, "DATA_TS") } just Runs
+            every { mockPreparedStatement.executeQuery() } returns mockResultSet
+
+            every { mockResultSet.next() } returnsMany listOf(true, true, false)
+            every { mockResultSet.getString("db_name") } returnsMany listOf("testdb", "testdb")
+            every { mockResultSet.getString("table_name") } returnsMany listOf("users", "orders")
+            every { mockResultSet.getString("engine") } returnsMany listOf("InnoDB", "InnoDB")
+            every { mockResultSet.getLong("rows") } returnsMany listOf(1000L, 5000L)
+            every { mockResultSet.getLong("size") } returnsMany listOf(1048576L, 5242880L)
+            every { mockResultSet.getString("create_time") } returnsMany listOf("2024-01-01 00:00:00", "2024-01-02 00:00:00")
+
+            every { mockResultSet.close() } just Runs
+            every { mockPreparedStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val tables = tablespaceService.getTablesInTablespace("test-session", "DATA_TS")
+
+            assertEquals(2, tables.size)
+            assertEquals("testdb.users", tables[0].name)
+            assertEquals("testdb.orders", tables[1].name)
+            assertEquals("InnoDB", tables[0].engine)
+            verify { mockPreparedStatement.setString(1, "DATA_TS") }
+        }
+
+        @Test
+        @DisplayName("getTablesInTablespace should return empty list when no tables exist")
+        fun testGetTablesInTablespaceEmpty() {
+            val mockConnection = mockk<Connection>()
+            val mockPreparedStatement = mockk<PreparedStatement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getTablesInTablespaceQuery() } returns
+                "SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLESPACE_NAME = ?"
+            every { mockConnection.prepareStatement(any()) } returns mockPreparedStatement
+            every { mockPreparedStatement.setString(1, "EMPTY_TS") } just Runs
+            every { mockPreparedStatement.executeQuery() } returns mockResultSet
+            every { mockResultSet.next() } returns false
+            every { mockResultSet.close() } just Runs
+            every { mockPreparedStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val tables = tablespaceService.getTablesInTablespace("test-session", "EMPTY_TS")
+
+            assertTrue(tables.isEmpty())
+        }
+
+        @Test
+        @DisplayName("moveTableToTablespace should execute alter table statement")
+        fun testMoveTableToTablespace() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            val request = TableLocationRequest(
+                database = "testdb",
+                tableName = "users",
+                tablespaceName = "NEW_TS"
+            )
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { mockDialect.getMoveTableToTablespaceSql("testdb", "users", "NEW_TS") } returns
+                "ALTER TABLE testdb.users TABLESPACE NEW_TS"
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.execute(any()) } returns true
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            mockkObject(AuditLogger)
+            every { AuditLogger.log(any(), any()) } just Runs
+
+            tablespaceService.moveTableToTablespace("test-session", request)
+
+            verify { mockStatement.execute(any()) }
+            verify { AuditLogger.log("MOVE_TABLE", "Moved table testdb.users to tablespace NEW_TS") }
+            unmockkObject(AuditLogger)
+        }
     }
 }

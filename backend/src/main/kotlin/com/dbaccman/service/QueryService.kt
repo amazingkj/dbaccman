@@ -15,8 +15,9 @@ data class QueryResult(
 class QueryService {
 
     companion object {
-        // Maximum rows to return to prevent memory issues
-        private const val MAX_ROWS = 1000
+        // Default and maximum rows to return
+        private const val DEFAULT_ROWS = 1000
+        private const val MAX_ROWS = 50000
 
         // Dangerous operations that are not allowed
         private val DANGEROUS_PATTERNS = listOf(
@@ -36,8 +37,10 @@ class QueryService {
         query: String,
         account: String?,
         username: String,
-        ipAddress: String?
+        ipAddress: String?,
+        limit: Int? = null
     ): QueryResult {
+        val rowLimit = (limit ?: DEFAULT_ROWS).coerceIn(1, MAX_ROWS)
         // Validate query
         validateQuery(query)
 
@@ -76,7 +79,7 @@ class QueryService {
 
                     if (isSelect) {
                         conn.createStatement().use { stmt ->
-                            stmt.maxRows = MAX_ROWS
+                            stmt.maxRows = rowLimit
                             stmt.executeQuery(trimmedQuery).use { rs ->
                                 val metaData = rs.metaData
                                 val columnCount = metaData.columnCount
@@ -84,7 +87,7 @@ class QueryService {
                                 val columns = (1..columnCount).map { metaData.getColumnLabel(it) }
                                 val rows = mutableListOf<List<Any?>>()
 
-                                while (rs.next() && rows.size < MAX_ROWS) {
+                                while (rs.next() && rows.size < rowLimit) {
                                     val row = (1..columnCount).map { i ->
                                         try {
                                             rs.getObject(i)?.toString()
@@ -148,7 +151,7 @@ class QueryService {
                             val isSelect = isSelectQuery(stmt)
                             if (isSelect) {
                                 conn.createStatement().use { s ->
-                                    s.maxRows = MAX_ROWS
+                                    s.maxRows = rowLimit
                                     s.executeQuery(stmt).use { rs ->
                                         var rowCount = 0
                                         while (rs.next()) rowCount++

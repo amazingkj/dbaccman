@@ -1,11 +1,27 @@
 package com.dbaccman.util
 
+import com.dbaccman.config.JwtConfig
 import com.dbaccman.dialect.DatabaseType
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.DisplayName
+import org.junit.jupiter.api.TestInstance
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class JwtUtilTest {
+
+    @BeforeAll
+    fun setUp() {
+        // Initialize JwtConfig with same values as application.conf
+        JwtConfig.init(
+            secret = "dbaccman-jwt-secret-key-change-in-production",
+            issuer = "dbaccman",
+            audience = "dbaccman-users",
+            realm = "DBAccMan",
+            expirationMs = 86400000L
+        )
+    }
 
     @Test
     @DisplayName("JwtUtil should be an object singleton")

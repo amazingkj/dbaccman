@@ -19,7 +19,8 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class ExecuteQueryRequest(
     val query: String,
-    val account: String? = null  // Account/schema to run query as
+    val account: String? = null,  // Account/schema to run query as
+    val limit: Int? = null  // Max rows to return (default: 1000, max: 50000)
 )
 
 @Serializable
@@ -74,7 +75,8 @@ fun Route.queryRoutes() {
                         query = request.query,
                         account = request.account,
                         username = username,
-                        ipAddress = clientIp
+                        ipAddress = clientIp,
+                        limit = request.limit
                     )
 
                     call.respond(QueryResultResponse(

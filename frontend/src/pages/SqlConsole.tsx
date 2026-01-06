@@ -131,7 +131,7 @@ function SqlConsole() {
     const timestamp = new Date().toLocaleString()
 
     try {
-      const response = await queryApi.execute(query, selectedAccount)
+      const response = await queryApi.execute(query, selectedAccount, 50000)
       setResult(response.data)
       setActiveTab('result')
 
