@@ -196,7 +196,9 @@ function Accounts() {
   const hasPrivilegeOptions = dbPrivileges.length > 0
 
   // Check for filter query param
-  const showExpiring = searchParams.get('filter') === 'expiring'
+  const filterParam = searchParams.get('filter')
+  const showExpiring = filterParam === 'expiring'
+  const showLocked = filterParam === 'locked'
 
   const [accounts, setAccounts] = useState<Account[]>([])
   const [expiringAccounts, setExpiringAccounts] = useState<ExpiringAccount[]>([])
@@ -235,12 +237,13 @@ function Accounts() {
     page = pagination.page,
     pageSize = pagination.pageSize,
     currentSortBy = sortBy,
-    currentSortOrder = sortOrder
+    currentSortOrder = sortOrder,
+    currentFilter?: string
   ) => {
     setLoading(true)
     try {
       const [paginatedRes, expiringRes] = await Promise.all([
-        accountsApi.listPaginated(page, pageSize, currentSortBy, currentSortOrder),
+        accountsApi.listPaginated(page, pageSize, currentSortBy, currentSortOrder, currentFilter),
         accountsApi.getExpiring(30),
       ])
       setAccounts(paginatedRes.data.data)
@@ -254,9 +257,21 @@ function Accounts() {
     }
   }
 
+  // Determine current filter from URL params
+  const currentFilter = showExpiring ? 'expiring' : showLocked ? 'locked' : undefined
+
   useEffect(() => {
-    fetchAccounts(1, pagination.pageSize)
-  }, [])
+    // When showing expiring accounts, default sort by passwordLifetime ascending (soonest first)
+    const defaultSortBy = showExpiring ? 'passwordLifetime' : sortBy
+    const defaultSortOrder = showExpiring ? 'asc' : sortOrder
+
+    if (showExpiring) {
+      setSortBy('passwordLifetime')
+      setSortOrder('asc')
+    }
+
+    fetchAccounts(1, pagination.pageSize, defaultSortBy, defaultSortOrder, currentFilter)
+  }, [currentFilter])
 
   const handleCreate = async (values: CreateAccountRequest & { privileges?: string[] }) => {
     try {
@@ -503,15 +518,11 @@ function Accounts() {
     return value.toString().toLowerCase().includes(search)
   }, [searchText, searchColumn])
 
-  // Memoize filtered accounts
+  // Memoize filtered accounts (server-side filtering for expiring/locked, client-side for search only)
   const filteredAccounts = useMemo(() => {
-    let result = accounts.filter(filterBySearch)
-    if (showExpiring) {
-      const expiringUsernames = new Set(expiringAccounts.map(e => e.username))
-      result = result.filter(a => expiringUsernames.has(a.username))
-    }
-    return result
-  }, [accounts, filterBySearch, showExpiring, expiringAccounts])
+    // Server already filters for expiring/locked, just apply client-side search filter
+    return accounts.filter(filterBySearch)
+  }, [accounts, filterBySearch])
 
   // Memoize columns to prevent unnecessary re-renders
   const columns = useMemo(() => [
@@ -662,6 +673,8 @@ function Accounts() {
           <Text type="secondary">
             {showExpiring
               ? `Showing ${filteredAccounts.length} account(s) expiring within 30 days`
+              : showLocked
+              ? `Showing ${filteredAccounts.length} locked account(s)`
               : 'Database user account management'}
           </Text>
         </div>
@@ -720,7 +733,7 @@ function Accounts() {
             >
               Create Account
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts(pagination.page, pagination.pageSize)}>
+            <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts(pagination.page, pagination.pageSize, sortBy, sortOrder, currentFilter)}>
               Refresh
             </Button>
             {selectedRowKeys.length > 0 && (
@@ -795,19 +808,21 @@ function Accounts() {
         onChange={(paginationConfig, _filters, sorter) => {
           // Handle sorting
           const sorterObj = Array.isArray(sorter) ? sorter[0] : sorter
-          const newSortBy = sorterObj?.order ? (sorterObj.field as string) : undefined
+          // Use columnKey which is more reliable than field in Ant Design
+          const newSortBy = sorterObj?.order ? (sorterObj.columnKey as string) : undefined
           const newSortOrder = sorterObj?.order === 'descend' ? 'desc' : 'asc'
 
           // Update sort state
           setSortBy(newSortBy)
           setSortOrder(newSortOrder as 'asc' | 'desc')
 
-          // Fetch with new page/sort parameters
+          // Fetch with new page/sort parameters (include current filter)
           fetchAccounts(
             paginationConfig.current || 1,
             paginationConfig.pageSize || 15,
             newSortBy,
-            newSortOrder as 'asc' | 'desc'
+            newSortOrder as 'asc' | 'desc',
+            currentFilter
           )
         }}
         rowSelection={{

@@ -16,10 +16,13 @@ export const accountsApi = {
   list: () =>
     apiClient.get<Account[]>('/accounts'),
 
-  listPaginated: (page: number, pageSize: number, sortBy?: string, sortOrder?: 'asc' | 'desc') => {
+  listPaginated: (page: number, pageSize: number, sortBy?: string, sortOrder?: 'asc' | 'desc', filter?: string) => {
     let url = `/accounts?page=${page}&pageSize=${pageSize}`
     if (sortBy) {
       url += `&sortBy=${sortBy}&sortOrder=${sortOrder || 'asc'}`
+    }
+    if (filter) {
+      url += `&filter=${filter}`
     }
     return apiClient.get<PaginatedAccountsResponse>(url)
   },

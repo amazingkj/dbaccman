@@ -180,6 +180,16 @@ body {
   border-radius: 8px;
 }
 
+.ant-select-item,
+.ant-select-selection-item,
+.ant-select-selector {
+  text-align: left !important;
+}
+
+.ant-select-item-option-content {
+  text-align: left !important;
+}
+
 /* Message & Notification */
 .ant-message-notice-content,
 .ant-notification-notice {

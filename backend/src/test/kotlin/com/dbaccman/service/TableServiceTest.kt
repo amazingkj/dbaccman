@@ -619,7 +619,7 @@ class TableServiceTest {
         }
 
         @Test
-        @DisplayName("gatherStats should return true for Oracle")
+        @DisplayName("gatherStats should return true for Oracle table-level stats")
         fun testGatherStats() {
             val mockConnection = mockk<Connection>()
             val mockStatement = mockk<Statement>()
@@ -628,9 +628,37 @@ class TableServiceTest {
             every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
             every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
 
-            every { mockDialect.getGatherStatsSql("TESTSCHEMA", null) } returns
-                    "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS('TESTSCHEMA'); END;"
+            // Table-level stats with minimal settings to avoid system overload
+            val expectedSql = "BEGIN DBMS_STATS.GATHER_TABLE_STATS(                 ownname => 'TESTSCHEMA',                 tabname => 'TESTTABLE',                 estimate_percent => 1,                 degree => 1,                 method_opt => 'FOR ALL COLUMNS SIZE 1',                 no_invalidate => TRUE             ); END;".replace("  ", " ")
+            every { mockDialect.getGatherStatsSql("TESTSCHEMA", "TESTTABLE") } returns expectedSql
             every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.queryTimeout = any() } just Runs
+            every { mockStatement.execute(any<String>()) } returns true
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val result = tableService.gatherStats("test-session", "TESTSCHEMA", "TESTTABLE")
+
+            assertTrue(result)
+            verify { mockStatement.queryTimeout = 30 }
+            verify { mockStatement.execute(expectedSql) }
+        }
+
+        @Test
+        @DisplayName("gatherStats should return true for Oracle schema-level stats")
+        fun testGatherStatsSchemaLevel() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockDialect = mockk<OracleDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+
+            // Schema-level stats with minimal settings
+            val expectedSql = "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(                 ownname => 'TESTSCHEMA',                 estimate_percent => 1,                 degree => 1,                 method_opt => 'FOR ALL COLUMNS SIZE 1',                 no_invalidate => TRUE,                 options => 'GATHER AUTO'             ); END;".replace("  ", " ")
+            every { mockDialect.getGatherStatsSql("TESTSCHEMA", null) } returns expectedSql
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.queryTimeout = any() } just Runs
             every { mockStatement.execute(any<String>()) } returns true
             every { mockStatement.close() } just Runs
             every { mockConnection.close() } just Runs
@@ -638,7 +666,8 @@ class TableServiceTest {
             val result = tableService.gatherStats("test-session", "TESTSCHEMA")
 
             assertTrue(result)
-            verify { mockStatement.execute("BEGIN DBMS_STATS.GATHER_SCHEMA_STATS('TESTSCHEMA'); END;") }
+            verify { mockStatement.queryTimeout = 30 }
+            verify { mockStatement.execute(expectedSql) }
         }
 
         @Test

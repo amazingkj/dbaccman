@@ -5,7 +5,7 @@
 ## Links
 
 * Web site: http://localhost:12080
-* Docker Hub: https://hub.docker.com/jiin724/dbaccman
+* Docker Hub: https://hub.docker.com/repository/docker/jiin724/dbaccman
 
 ## Features
 

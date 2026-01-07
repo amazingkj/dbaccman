@@ -7,7 +7,12 @@ import com.dbaccman.util.AuditLogger
 
 class SessionService {
 
-    fun getActiveSessions(sessionId: String): List<SessionInfo> {
+    companion object {
+        // Maximum sessions to return to prevent memory issues
+        const val MAX_SESSIONS = 1000
+    }
+
+    fun getActiveSessions(sessionId: String, limit: Int = MAX_SESSIONS): List<SessionInfo> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getActiveSessionsQuery()
 
@@ -18,7 +23,8 @@ class SessionService {
                     val hasSerialNum = (1..metaData.columnCount).any {
                         metaData.getColumnLabel(it).equals("serial_num", ignoreCase = true)
                     }
-                    while (rs.next()) {
+                    var count = 0
+                    while (rs.next() && count < limit) {
                         sessions.add(
                             SessionInfo(
                                 pid = rs.getLong("pid"),
@@ -32,6 +38,7 @@ class SessionService {
                                 query = rs.getString("query")?.take(500)
                             )
                         )
+                        count++
                     }
                     sessions
                 }

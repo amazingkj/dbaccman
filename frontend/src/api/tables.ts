@@ -1,5 +1,6 @@
 import apiClient from './client'
 import type { DatabaseInfo, TableInfo, IndexInfo } from '../types'
+import { apiCache, CACHE_TTL, CACHE_KEYS } from '../utils/cache'
 
 export interface TableDataResult {
   columns: string[]
@@ -17,17 +18,40 @@ export interface ColumnInfo {
 }
 
 export const tablesApi = {
-  getDatabases: () =>
-    apiClient.get<DatabaseInfo[]>('/databases'),
+  getDatabases: async () => {
+    const cached = apiCache.get<DatabaseInfo[]>(CACHE_KEYS.DATABASES)
+    if (cached) return { data: cached }
+    const response = await apiClient.get<DatabaseInfo[]>('/databases')
+    apiCache.set(CACHE_KEYS.DATABASES, response.data, CACHE_TTL.MEDIUM)
+    return response
+  },
 
-  getTables: (database: string) =>
-    apiClient.get<TableInfo[]>(`/tables/${encodeURIComponent(database)}`),
+  getTables: async (database: string) => {
+    const cacheKey = CACHE_KEYS.TABLES(database)
+    const cached = apiCache.get<TableInfo[]>(cacheKey)
+    if (cached) return { data: cached }
+    const response = await apiClient.get<TableInfo[]>(`/tables/${encodeURIComponent(database)}`)
+    apiCache.set(cacheKey, response.data, CACHE_TTL.MEDIUM)
+    return response
+  },
 
-  getColumns: (database: string, table: string) =>
-    apiClient.get<ColumnInfo[]>(`/tables/${encodeURIComponent(database)}/${encodeURIComponent(table)}/columns`),
+  getColumns: async (database: string, table: string) => {
+    const cacheKey = CACHE_KEYS.COLUMNS(database, table)
+    const cached = apiCache.get<ColumnInfo[]>(cacheKey)
+    if (cached) return { data: cached }
+    const response = await apiClient.get<ColumnInfo[]>(`/tables/${encodeURIComponent(database)}/${encodeURIComponent(table)}/columns`)
+    apiCache.set(cacheKey, response.data, CACHE_TTL.LONG)
+    return response
+  },
 
-  getIndexes: (database: string, table: string) =>
-    apiClient.get<IndexInfo[]>(`/tables/${encodeURIComponent(database)}/${encodeURIComponent(table)}/indexes`),
+  getIndexes: async (database: string, table: string) => {
+    const cacheKey = CACHE_KEYS.INDEXES(database, table)
+    const cached = apiCache.get<IndexInfo[]>(cacheKey)
+    if (cached) return { data: cached }
+    const response = await apiClient.get<IndexInfo[]>(`/tables/${encodeURIComponent(database)}/${encodeURIComponent(table)}/indexes`)
+    apiCache.set(cacheKey, response.data, CACHE_TTL.LONG)
+    return response
+  },
 
   getTableData: (database: string, table: string, limit: number = 100) =>
     apiClient.get<TableDataResult>(`/tables/${encodeURIComponent(database)}/${encodeURIComponent(table)}/data?limit=${limit}`),
@@ -36,4 +60,12 @@ export const tablesApi = {
     apiClient.post<{ success: boolean }>(
       `/tables/${encodeURIComponent(database)}/gather-stats${table ? `?table=${encodeURIComponent(table)}` : ''}`
     ),
+
+  // Cache invalidation methods
+  invalidateDatabases: () => apiCache.invalidate(CACHE_KEYS.DATABASES),
+  invalidateTables: (database: string) => apiCache.invalidate(CACHE_KEYS.TABLES(database)),
+  invalidateSchema: (database: string, table: string) => {
+    apiCache.invalidate(CACHE_KEYS.COLUMNS(database, table))
+    apiCache.invalidate(CACHE_KEYS.INDEXES(database, table))
+  },
 }

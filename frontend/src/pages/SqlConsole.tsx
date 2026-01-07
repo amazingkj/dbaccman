@@ -25,7 +25,6 @@ import {
   TableOutlined,
   HistoryOutlined,
   CopyOutlined,
-  UserOutlined,
   CodeOutlined,
   DatabaseOutlined,
   KeyOutlined,
@@ -38,7 +37,6 @@ const { TextArea } = Input
 
 interface QueryHistory {
   query: string
-  account?: string
   timestamp: string
   success: boolean
   rowCount?: number
@@ -48,7 +46,6 @@ interface QueryHistory {
 function SqlConsole() {
   const { user } = useAuthStore()
   const [query, setQuery] = useState('')
-  const [selectedAccount, setSelectedAccount] = useState<string | undefined>()
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<QueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -99,7 +96,18 @@ function SqlConsole() {
   }, [fetchSchemas])
 
   const executeQuery = async () => {
-    if (!query.trim()) {
+    // Check for selected text in the textarea
+    let queryToExecute = query
+    const textarea = textAreaRef.current?.resizableTextArea?.textArea
+    if (textarea) {
+      const { selectionStart, selectionEnd } = textarea
+      if (selectionStart !== selectionEnd) {
+        // There's a selection - execute only the selected text
+        queryToExecute = query.substring(selectionStart, selectionEnd)
+      }
+    }
+
+    if (!queryToExecute.trim()) {
       message.warning('Please enter a query')
       return
     }
@@ -110,14 +118,13 @@ function SqlConsole() {
     const timestamp = new Date().toLocaleString()
 
     try {
-      const response = await queryApi.execute(query, selectedAccount, 50000)
+      const response = await queryApi.execute(queryToExecute, undefined, 50000)
       setResult(response.data)
       setActiveTab('result')
 
-      // Add to history
+      // Add to history (use queryToExecute - the actual executed query)
       setHistory(prev => [{
-        query,
-        account: selectedAccount,
+        query: queryToExecute,
         timestamp,
         success: true,
         rowCount: response.data.rowCount,
@@ -135,10 +142,9 @@ function SqlConsole() {
       setError(errorMsg)
       setResult(null)
 
-      // Add to history
+      // Add to history (use queryToExecute - the actual executed query)
       setHistory(prev => [{
-        query,
-        account: selectedAccount,
+        query: queryToExecute,
         timestamp,
         success: false,
         executionTimeMs: errorResponse.response?.data?.executionTimeMs,
@@ -159,13 +165,11 @@ function SqlConsole() {
       e.preventDefault()
       setQuery(lastClearedQuery)
       setLastClearedQuery(null)
-      message.info('Query restored')
     }
   }
 
   const loadFromHistory = (item: QueryHistory) => {
     setQuery(item.query)
-    setSelectedAccount(item.account)
   }
 
   const copyToClipboard = (text: string) => {
@@ -196,9 +200,9 @@ function SqlConsole() {
               <KeyOutlined style={{ color: '#faad14', fontSize: 12 }} />
             </Tooltip>
           )}
-          <span>{col}</span>
+          <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{col}</span>
           {columnType && (
-            <Text type="secondary" style={{ fontSize: 10, fontWeight: 'normal' }}>
+            <Text type="secondary" style={{ fontSize: 10, fontWeight: 'normal', fontFamily: 'monospace' }}>
               ({columnType})
             </Text>
           )}
@@ -268,14 +272,11 @@ function SqlConsole() {
                   <Text type="secondary">Apply Schema:</Text>
                   <Select
                     placeholder="Select schema"
-                    style={{ width: 180 }}
+                    style={{ width: 150 }}
                     showSearch
                     loading={schemaLoading}
                     value={schemaInfo?.currentSchema}
-                    onChange={(schema) => {
-                      handleSwitchSchema(schema)
-                      setSelectedAccount(schema)
-                    }}
+                    onChange={handleSwitchSchema}
                     optionFilterProp="label"
                     options={schemaInfo?.availableSchemas.map(schema => ({
                       value: schema,
@@ -396,13 +397,6 @@ function SqlConsole() {
                         <div style={{ textAlign: 'center', padding: 40, color: '#888' }}>
                           <CodeOutlined style={{ fontSize: 48, marginBottom: 16 }} />
                           <div>Execute a query to see results</div>
-                          {selectedAccount && (
-                            <div style={{ marginTop: 8 }}>
-                              <Tag color="purple" icon={<UserOutlined />}>
-                                Running as: {selectedAccount}
-                              </Tag>
-                            </div>
-                          )}
                         </div>
                       )}
                     </div>
@@ -457,9 +451,6 @@ function SqlConsole() {
                                 <Text type="secondary" style={{ fontSize: 12 }}>
                                   {item.timestamp}
                                 </Text>
-                                {item.account && (
-                                  <Tag color="purple" icon={<UserOutlined />}>{item.account}</Tag>
-                                )}
                                 {item.rowCount !== undefined && (
                                   <Text type="secondary" style={{ fontSize: 12 }}>
                                     {item.rowCount} rows

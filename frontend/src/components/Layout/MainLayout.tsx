@@ -1,15 +1,18 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Outlet, useNavigate } from 'react-router-dom'
-import { Layout, Tag, Space, Avatar, Dropdown, theme, Modal, Input, Form, message } from 'antd'
-import { LogoutOutlined, UserOutlined, SwapOutlined, PlusOutlined } from '@ant-design/icons'
+import { Layout, Tag, Space, Avatar, Dropdown, theme, Modal, Input, Form, message, Badge, Popover, Typography } from 'antd'
+import { LogoutOutlined, UserOutlined, SwapOutlined, BellOutlined, WarningOutlined, ClockCircleOutlined, LockOutlined, RightOutlined, HddOutlined } from '@ant-design/icons'
 import type { MenuProps } from 'antd'
 import { useAuthStore } from '../../store/authStore'
 import { useConnectionStore } from '../../store/connectionStore'
 import { useAuth } from '../../hooks/useAuth'
+import { dashboardApi } from '../../api/dashboard'
 import Sidebar from './Sidebar'
 import SessionTimeout from '../common/SessionTimeout'
 import SessionCountdown from '../common/SessionCountdown'
-import type { RecentConnection } from '../../types'
+import type { RecentConnection, DashboardStats } from '../../types'
+
+const { Text } = Typography
 
 const { Header, Content, Footer } = Layout
 
@@ -19,6 +22,7 @@ function MainLayout() {
   const [switchTarget, setSwitchTarget] = useState<RecentConnection | null>(null)
   const [switchLoading, setSwitchLoading] = useState(false)
   const [form] = Form.useForm()
+  const [healthStats, setHealthStats] = useState<DashboardStats | null>(null)
 
   const { user } = useAuthStore()
   const { recentConnections } = useConnectionStore()
@@ -28,12 +32,53 @@ function MainLayout() {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken()
 
-  const getDbTypeColor = (dbType?: string) => {
-    switch (dbType?.toUpperCase()) {
-      case 'MYSQL': return '#00758F'
-      case 'POSTGRESQL': return '#336791'
-      case 'ORACLE': return '#F80000'
-      default: return '#1890ff'
+  const isAdmin = user?.role === 'admin'
+
+  // Fetch health stats for admin users
+  useEffect(() => {
+    if (!isAdmin) return
+
+    const fetchHealthStats = async () => {
+      try {
+        const response = await dashboardApi.getStats()
+        setHealthStats(response.data)
+      } catch {
+        // Silently fail - not critical for layout
+      }
+    }
+
+    fetchHealthStats()
+    // Refresh every 2 minutes
+    const interval = setInterval(fetchHealthStats, 120000)
+    return () => clearInterval(interval)
+  }, [isAdmin])
+
+  // Calculate notification count and health color
+  const notificationCount = healthStats
+    ? (healthStats.expiringSoon || 0) + (healthStats.lockedAccounts || 0) + (healthStats.slowQueries || 0) + (healthStats.criticalTablespaces || 0)
+    : 0
+
+  const healthColor = healthStats?.healthScore?.status === 'healthy' ? '#52c41a'
+    : healthStats?.healthScore?.status === 'warning' ? '#faad14' : '#ff4d4f'
+
+  const getDbTypeTagProps = (dbType?: string) => {
+    const type = dbType?.toUpperCase()
+    switch (type) {
+      case 'MYSQL':
+        return { color: '#00758F' }
+      case 'POSTGRESQL':
+        return { color: '#336791' }
+      case 'ORACLE':
+        return {
+          color: undefined,
+          style: {
+            color: '#F80000',
+            borderColor: '#F80000',
+            background: 'transparent'
+          }
+        }
+      default:
+        return { color: '#1890ff' }
     }
   }
 
@@ -92,7 +137,10 @@ function MainLayout() {
           <Space>
             <SwapOutlined style={{ color: '#5d87ff' }} />
             <span>{conn.username}@{conn.host}</span>
-            <Tag style={{ fontSize: 10, padding: '0 4px', margin: 0 }} color={getDbTypeColor(conn.dbType)}>
+            <Tag
+              {...getDbTypeTagProps(conn.dbType)}
+              style={{ fontSize: 10, padding: '0 4px', margin: 0, ...getDbTypeTagProps(conn.dbType).style }}
+            >
               {conn.dbType}
             </Tag>
           </Space>
@@ -101,19 +149,6 @@ function MainLayout() {
       })),
       { type: 'divider' as const },
     ] : []),
-    {
-      key: 'new-connection',
-      label: (
-        <Space>
-          <PlusOutlined />
-          <span>New Connection</span>
-        </Space>
-      ),
-      onClick: () => {
-        logout()
-        navigate('/login')
-      },
-    },
     {
       key: 'logout',
       label: (
@@ -152,8 +187,8 @@ function MainLayout() {
             }}
           >
             <Tag
-              color={getDbTypeColor(user?.dbType)}
-              style={{ margin: 0, fontWeight: 500 }}
+              {...getDbTypeTagProps(user?.dbType)}
+              style={{ margin: 0, fontWeight: 500, ...getDbTypeTagProps(user?.dbType).style }}
             >
               {user?.dbType?.toUpperCase()}
             </Tag>
@@ -164,6 +199,142 @@ function MainLayout() {
           {user && (
             <Space size="middle">
               <SessionCountdown />
+              {/* Health Notifications Bell for Admin */}
+              {isAdmin && (
+                <Popover
+                  placement="bottomRight"
+                  trigger="click"
+                  overlayInnerStyle={{ padding: 0 }}
+                  content={
+                    <div style={{ width: 340 }}>
+                      {/* Header */}
+                      <div
+                        style={{
+                          padding: '12px 16px',
+                          background: `${healthColor}10`,
+                          borderBottom: `1px solid ${healthColor}20`,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Space>
+                          <WarningOutlined style={{ color: healthColor, fontSize: 16 }} />
+                          <Text strong style={{ color: healthColor }}>System Health Alerts</Text>
+                        </Space>
+                      </div>
+                      {/* Alert Items */}
+                      <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                        {healthStats && notificationCount > 0 ? (
+                          <>
+                            {healthStats.expiringSoon > 0 && (
+                              <div
+                                style={{
+                                  padding: '10px 16px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  borderBottom: '1px solid #f0f0f0',
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => navigate('/accounts?filter=expiring')}
+                              >
+                                <Space>
+                                  <WarningOutlined style={{ color: '#faad14' }} />
+                                  <div>
+                                    <div style={{ fontWeight: 500, fontSize: 13 }}>Password Expiring</div>
+                                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{healthStats.expiringSoon} account(s) within 30 days</div>
+                                  </div>
+                                </Space>
+                                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+                              </div>
+                            )}
+                            {healthStats.slowQueries > 0 && (
+                              <div
+                                style={{
+                                  padding: '10px 16px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  borderBottom: '1px solid #f0f0f0',
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => navigate('/sessions')}
+                              >
+                                <Space>
+                                  <ClockCircleOutlined style={{ color: '#ff4d4f' }} />
+                                  <div>
+                                    <div style={{ fontWeight: 500, fontSize: 13 }}>Slow Queries</div>
+                                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{healthStats.slowQueries} queries &gt; 60 seconds</div>
+                                  </div>
+                                </Space>
+                                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+                              </div>
+                            )}
+                            {healthStats.lockedAccounts > 0 && (
+                              <div
+                                style={{
+                                  padding: '10px 16px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  borderBottom: '1px solid #f0f0f0',
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => navigate('/accounts?filter=locked')}
+                              >
+                                <Space>
+                                  <LockOutlined style={{ color: '#ff4d4f' }} />
+                                  <div>
+                                    <div style={{ fontWeight: 500, fontSize: 13 }}>Locked Accounts</div>
+                                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{healthStats.lockedAccounts} account(s) locked</div>
+                                  </div>
+                                </Space>
+                                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+                              </div>
+                            )}
+                            {healthStats.criticalTablespaces > 0 && (
+                              <div
+                                style={{
+                                  padding: '10px 16px',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  cursor: 'pointer',
+                                }}
+                                onClick={() => navigate('/tablespaces?sort=usage')}
+                              >
+                                <Space>
+                                  <HddOutlined style={{ color: '#fa8c16' }} />
+                                  <div>
+                                    <div style={{ fontWeight: 500, fontSize: 13 }}>Storage Critical</div>
+                                    <div style={{ fontSize: 12, color: '#8c8c8c' }}>{healthStats.criticalTablespaces} tablespace(s) &gt; 90%</div>
+                                  </div>
+                                </Space>
+                                <RightOutlined style={{ color: '#8c8c8c', fontSize: 12 }} />
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ padding: '24px 16px', textAlign: 'center' }}>
+                            <Text type="secondary">No alerts - System is healthy</Text>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  }
+                >
+                  <Badge count={notificationCount} size="small" offset={[-2, 2]}>
+                    <BellOutlined
+                      style={{
+                        fontSize: 18,
+                        cursor: 'pointer',
+                        color: notificationCount > 0 ? '#faad14' : '#8c8c8c',
+                      }}
+                    />
+                  </Badge>
+                </Popover>
+              )}
               <Space>
                 <Tag
                   color={user.role === 'admin' ? 'purple' : 'default'}
@@ -243,7 +414,10 @@ function MainLayout() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <UserOutlined style={{ color: '#5d87ff' }} />
                   <span style={{ fontWeight: 600 }}>{switchTarget.username}</span>
-                  <Tag color={getDbTypeColor(switchTarget.dbType)} style={{ margin: 0 }}>
+                  <Tag
+                    {...getDbTypeTagProps(switchTarget.dbType)}
+                    style={{ margin: 0, ...getDbTypeTagProps(switchTarget.dbType).style }}
+                  >
                     {switchTarget.dbType}
                   </Tag>
                 </div>

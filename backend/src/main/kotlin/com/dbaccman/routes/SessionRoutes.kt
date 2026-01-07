@@ -41,7 +41,9 @@ fun Route.sessionRoutes() {
             get {
                 call.handleAdminRoute(logger, "Failed to fetch sessions") {
                     val sessionId = call.getSessionId()
-                    val sessions = sessionService.getActiveSessions(sessionId)
+                    val limit = call.request.queryParameters["limit"]?.toIntOrNull()
+                        ?: SessionService.MAX_SESSIONS
+                    val sessions = sessionService.getActiveSessions(sessionId, limit.coerceIn(1, SessionService.MAX_SESSIONS))
                     call.respond(sessions)
                 }
             }

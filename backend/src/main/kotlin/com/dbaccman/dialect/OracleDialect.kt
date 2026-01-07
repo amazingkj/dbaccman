@@ -38,8 +38,9 @@ class OracleDialect : DatabaseDialect {
             s.STATUS as command,
             ROUND((SYSDATE - s.LOGON_TIME) * 24 * 60 * 60) as time,
             s.STATE as state,
-            (SELECT SQL_TEXT FROM V${'$'}SQL WHERE SQL_ID = s.SQL_ID AND ROWNUM = 1) as query
+            q.SQL_TEXT as query
         FROM V${'$'}SESSION s
+        LEFT JOIN V${'$'}SQLAREA q ON s.SQL_ID = q.SQL_ID
         WHERE s.TYPE = 'USER'
         AND s.SID != SYS_CONTEXT('USERENV', 'SID')
         ORDER BY s.LOGON_TIME DESC
@@ -66,8 +67,9 @@ class OracleDialect : DatabaseDialect {
             s.STATUS as command,
             ROUND((SYSDATE - s.LOGON_TIME) * 24 * 60 * 60) as time,
             s.STATE as state,
-            (SELECT SQL_TEXT FROM V${'$'}SQL WHERE SQL_ID = s.SQL_ID AND ROWNUM = 1) as query
+            q.SQL_TEXT as query
         FROM V${'$'}SESSION s
+        LEFT JOIN V${'$'}SQLAREA q ON s.SQL_ID = q.SQL_ID
         WHERE s.TYPE = 'USER'
         AND s.SID != SYS_CONTEXT('USERENV', 'SID')
         AND s.STATUS = 'ACTIVE'
@@ -107,7 +109,12 @@ class OracleDialect : DatabaseDialect {
         WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
     """.trimIndent()
 
-    override fun getPaginatedAccountsQuery(orderByClause: String): String {
+    override fun getLockedAccountsWhereClause(): String = "AND ACCOUNT_STATUS LIKE '%LOCKED%'"
+
+    override fun getExpiringAccountsWhereClause(days: Int): String =
+        "AND EXPIRY_DATE IS NOT NULL AND EXPIRY_DATE <= CURRENT_DATE + $days AND ACCOUNT_STATUS NOT LIKE '%LOCKED%'"
+
+    override fun getPaginatedAccountsQuery(orderByClause: String, filterClause: String): String {
         val orderBy = orderByClause.ifEmpty { "ORDER BY USERNAME" }
         return """
             SELECT
@@ -118,7 +125,29 @@ class OracleDialect : DatabaseDialect {
                 CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked
             FROM DBA_USERS
             WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+            $filterClause
             $orderBy
+            OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
+        """.trimIndent()
+    }
+
+    override fun getOptimizedPaginatedAccountsQuery(orderByClause: String, filterClause: String): String {
+        val orderBy = orderByClause.ifEmpty { "ORDER BY USERNAME" }
+        return """
+            SELECT * FROM (
+                SELECT
+                    USERNAME as username,
+                    'localhost' as host,
+                    TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
+                    TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
+                    CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked,
+                    COUNT(*) OVER() as total_count,
+                    SUM(CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END) OVER() as locked_count
+                FROM DBA_USERS
+                WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+                $filterClause
+                $orderBy
+            )
             OFFSET ? ROWS FETCH NEXT ? ROWS ONLY
         """.trimIndent()
     }
@@ -265,11 +294,11 @@ class OracleDialect : DatabaseDialect {
         SELECT
             USERNAME as username,
             'localhost' as host,
-            TRUNC(EXPIRY_DATE - SYSDATE) as days_until_expiry
+            TRUNC(EXPIRY_DATE - CURRENT_DATE) as days_until_expiry
         FROM DBA_USERS
         WHERE EXPIRY_DATE IS NOT NULL
-        AND EXPIRY_DATE > SYSDATE
-        AND TRUNC(EXPIRY_DATE - SYSDATE) < ?
+        AND EXPIRY_DATE > CURRENT_DATE
+        AND TRUNC(EXPIRY_DATE - CURRENT_DATE) < ?
         ORDER BY EXPIRY_DATE ASC
     """.trimIndent()
 
@@ -320,6 +349,35 @@ class OracleDialect : DatabaseDialect {
             CASE WHEN GRANTABLE = 'YES' THEN 'YES' ELSE 'NO' END as is_grantable
         FROM DBA_TAB_PRIVS
         WHERE GRANTEE = ?
+    """.trimIndent()
+
+    override fun getAllSchemaPrivilegesQuery(): String = """
+        SELECT
+            GRANTEE as grantee,
+            'SYSTEM' as db,
+            PRIVILEGE as privilege,
+            CASE WHEN ADMIN_OPTION = 'YES' THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM DBA_SYS_PRIVS
+        WHERE GRANTEE NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        UNION ALL
+        SELECT
+            GRANTEE as grantee,
+            GRANTED_ROLE as db,
+            'ROLE' as privilege,
+            CASE WHEN ADMIN_OPTION = 'YES' THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM DBA_ROLE_PRIVS
+        WHERE GRANTEE NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+    """.trimIndent()
+
+    override fun getAllTablePrivilegesQuery(): String = """
+        SELECT
+            GRANTEE as grantee,
+            OWNER as db,
+            TABLE_NAME as tbl,
+            PRIVILEGE as privilege,
+            CASE WHEN GRANTABLE = 'YES' THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM DBA_TAB_PRIVS
+        WHERE GRANTEE NOT IN (${getSystemUsers().joinToString { "'$it'" }})
     """.trimIndent()
 
     // Oracle object privileges (can be granted on specific tables)
@@ -567,14 +625,31 @@ class OracleDialect : DatabaseDialect {
         return "SELECT * FROM $quotedTable FETCH FIRST $limit ROWS ONLY"
     }
 
-    override fun getGatherStatsSql(schema: String, table: String?): String {
-        // Use ESTIMATE_PERCENT for faster sampling (10% sample instead of full scan)
-        // Use NO_INVALIDATE to avoid invalidating dependent cursors
+    override fun getGatherStatsSql(schema: String, table: String?): String? {
+        // Minimal stats gathering to avoid system overload:
+        // - estimate_percent => 1: Only 1% sample
+        // - degree => 1: No parallelism (single thread)
+        // - method_opt => 'FOR ALL COLUMNS SIZE 1': Skip histogram collection
+        // - no_invalidate => TRUE: Don't invalidate cursors
+        // - options => 'GATHER AUTO': Only gather stale stats
         return if (table != null) {
-            "BEGIN DBMS_STATS.GATHER_TABLE_STATS('${schema.uppercase()}', '${table.uppercase()}', estimate_percent => 10, no_invalidate => TRUE); END;"
+            """BEGIN DBMS_STATS.GATHER_TABLE_STATS(
+                ownname => '${schema.uppercase()}',
+                tabname => '${table.uppercase()}',
+                estimate_percent => 1,
+                degree => 1,
+                method_opt => 'FOR ALL COLUMNS SIZE 1',
+                no_invalidate => TRUE
+            ); END;""".replace("\n", " ")
         } else {
-            // For schema-level, use even smaller sample and skip locked tables
-            "BEGIN DBMS_STATS.GATHER_SCHEMA_STATS('${schema.uppercase()}', estimate_percent => 5, no_invalidate => TRUE, options => 'GATHER AUTO'); END;"
+            """BEGIN DBMS_STATS.GATHER_SCHEMA_STATS(
+                ownname => '${schema.uppercase()}',
+                estimate_percent => 1,
+                degree => 1,
+                method_opt => 'FOR ALL COLUMNS SIZE 1',
+                no_invalidate => TRUE,
+                options => 'GATHER AUTO'
+            ); END;""".replace("\n", " ")
         }
     }
 
@@ -639,7 +714,7 @@ class OracleDialect : DatabaseDialect {
             TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
             TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
             CASE WHEN ACCOUNT_STATUS LIKE '%EXPIRED%' THEN 1 ELSE 0 END as is_expired,
-            TRUNC(EXPIRY_DATE - SYSDATE) as days_until_expiry
+            TRUNC(EXPIRY_DATE - CURRENT_DATE) as days_until_expiry
         FROM DBA_USERS
         WHERE USERNAME = UPPER(?)
         AND NVL(?, 'localhost') IS NOT NULL
@@ -655,14 +730,14 @@ class OracleDialect : DatabaseDialect {
             TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
             TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
             CASE WHEN ACCOUNT_STATUS LIKE '%EXPIRED%' THEN 1 ELSE 0 END as is_expired,
-            TRUNC(EXPIRY_DATE - SYSDATE) as days_until_expiry
+            TRUNC(EXPIRY_DATE - CURRENT_DATE) as days_until_expiry
         FROM USER_USERS
         WHERE NVL(?, 'localhost') IS NOT NULL
     """.trimIndent()
 
     override fun getPasswordExpiryDaysQuery(): String = """
         SELECT
-            TRUNC(EXPIRY_DATE - SYSDATE) as days_until_expiry
+            TRUNC(EXPIRY_DATE - CURRENT_DATE) as days_until_expiry
         FROM DBA_USERS
         WHERE USERNAME = UPPER(?)
     """.trimIndent()
@@ -865,4 +940,76 @@ class OracleDialect : DatabaseDialect {
      * Returns SQL to check if current database is a CDB.
      */
     fun getIsCdbQuery(): String = "SELECT CDB FROM V\$DATABASE"
+
+    // ==================== User-specific Queries (Own Schema Only) ====================
+
+    /**
+     * Returns tables owned by the current user (using USER_TABLES).
+     */
+    fun getMyTablesQuery(): String = """
+        SELECT
+            USER as schema_name,
+            TABLE_NAME as table_name,
+            NUM_ROWS as row_count,
+            TO_CHAR(LAST_ANALYZED, 'YYYY-MM-DD HH24:MI:SS') as last_analyzed,
+            TABLESPACE_NAME as tablespace_name
+        FROM USER_TABLES
+        ORDER BY TABLE_NAME
+    """.trimIndent()
+
+    /**
+     * Returns columns for a table owned by the current user.
+     */
+    fun getMyTableColumnsQuery(): String = """
+        SELECT
+            COLUMN_NAME as column_name,
+            DATA_TYPE ||
+                CASE
+                    WHEN DATA_TYPE IN ('VARCHAR2', 'CHAR', 'NVARCHAR2', 'NCHAR') THEN '(' || DATA_LENGTH || ')'
+                    WHEN DATA_TYPE = 'NUMBER' AND DATA_PRECISION IS NOT NULL THEN '(' || DATA_PRECISION || ',' || NVL(DATA_SCALE, 0) || ')'
+                    ELSE ''
+                END as data_type,
+            NULLABLE as is_nullable,
+            COLUMN_ID as ordinal_position,
+            DATA_DEFAULT as column_default
+        FROM USER_TAB_COLUMNS
+        WHERE TABLE_NAME = UPPER(?)
+        ORDER BY COLUMN_ID
+    """.trimIndent()
+
+    /**
+     * Returns indexes for a table owned by the current user.
+     */
+    fun getMyTableIndexesQuery(): String = """
+        SELECT
+            i.INDEX_NAME as index_name,
+            i.INDEX_TYPE as index_type,
+            CASE WHEN i.UNIQUENESS = 'UNIQUE' THEN 1 ELSE 0 END as is_unique,
+            LISTAGG(c.COLUMN_NAME, ', ') WITHIN GROUP (ORDER BY c.COLUMN_POSITION) as columns
+        FROM USER_INDEXES i
+        LEFT JOIN USER_IND_COLUMNS c ON i.INDEX_NAME = c.INDEX_NAME
+        WHERE i.TABLE_NAME = UPPER(?)
+        GROUP BY i.INDEX_NAME, i.INDEX_TYPE, i.UNIQUENESS
+        ORDER BY i.INDEX_NAME
+    """.trimIndent()
+
+    /**
+     * Returns tablespace quotas for the current user.
+     */
+    fun getMyTablespacesQuery(): String = """
+        SELECT
+            TABLESPACE_NAME as name,
+            CASE WHEN MAX_BYTES = -1 THEN 'UNLIMITED' ELSE TO_CHAR(MAX_BYTES) END as max_bytes,
+            BYTES as used_bytes
+        FROM USER_TS_QUOTAS
+        ORDER BY TABLESPACE_NAME
+    """.trimIndent()
+
+    /**
+     * Returns the current user's default tablespace.
+     */
+    fun getMyDefaultTablespaceQuery(): String = """
+        SELECT DEFAULT_TABLESPACE, TEMPORARY_TABLESPACE
+        FROM USER_USERS
+    """.trimIndent()
 }

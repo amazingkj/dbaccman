@@ -14,6 +14,18 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          // Vendor chunks for better caching
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          'vendor-antd': ['antd', '@ant-design/icons'],
+          'vendor-utils': ['axios', 'zustand'],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',

@@ -239,6 +239,36 @@ function Permissions() {
     })
   }
 
+  // Get existing privileges for a database/table combination
+  const getExistingPrivileges = (database: string, table: string = '*') => {
+    return permissions
+      .filter(p => p.database === database && (table === '*' || p.table === table || p.table === '*'))
+      .map(p => p.privilege)
+  }
+
+  // Handle database selection change - pre-check existing privileges
+  const handleDatabaseChange = (database: string) => {
+    form.setFieldsValue({ database })
+    const table = form.getFieldValue('table') || '*'
+    const existingPrivileges = getExistingPrivileges(database, table)
+    if (existingPrivileges.length > 0) {
+      form.setFieldsValue({ privileges: existingPrivileges })
+    }
+  }
+
+  // Handle table change - update existing privileges
+  const handleTableChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const table = e.target.value || '*'
+    form.setFieldsValue({ table })
+    const database = form.getFieldValue('database')
+    if (database) {
+      const existingPrivileges = getExistingPrivileges(database, table)
+      if (existingPrivileges.length > 0) {
+        form.setFieldsValue({ privileges: existingPrivileges })
+      }
+    }
+  }
+
   // Search filter function
   const filterBySearch = (permission: Permission) => {
     if (!searchText) return true
@@ -561,6 +591,7 @@ function Permissions() {
                         filterOption={(input, option) =>
                           (option?.value as string)?.toLowerCase().includes(input.toLowerCase())
                         }
+                        onChange={handleDatabaseChange}
                       >
                         {databases.map((db) => (
                           <Option key={db.name} value={db.name}>
@@ -572,7 +603,7 @@ function Permissions() {
                   </Col>
                   <Col span={12}>
                     <Form.Item name="table" label="Table">
-                      <Input placeholder="* for all tables" />
+                      <Input placeholder="* for all tables" onChange={handleTableChange} />
                     </Form.Item>
                   </Col>
                 </Row>

@@ -98,7 +98,14 @@ class MySQLDialect : DatabaseDialect {
         WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
     """.trimIndent()
 
-    override fun getPaginatedAccountsQuery(orderByClause: String): String {
+    override fun getLockedAccountsWhereClause(): String = "AND account_locked = 'Y'"
+
+    override fun getExpiringAccountsWhereClause(days: Int): String =
+        "AND password_lifetime IS NOT NULL AND password_lifetime > 0 AND " +
+        "DATE_ADD(password_last_changed, INTERVAL password_lifetime DAY) <= DATE_ADD(NOW(), INTERVAL $days DAY) " +
+        "AND account_locked != 'Y'"
+
+    override fun getPaginatedAccountsQuery(orderByClause: String, filterClause: String): String {
         val orderBy = orderByClause.ifEmpty { "ORDER BY user, host" }
         return """
             SELECT
@@ -109,6 +116,26 @@ class MySQLDialect : DatabaseDialect {
                 account_locked = 'Y' as account_locked
             FROM mysql.user
             WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+            $filterClause
+            $orderBy
+            LIMIT ? OFFSET ?
+        """.trimIndent()
+    }
+
+    override fun getOptimizedPaginatedAccountsQuery(orderByClause: String, filterClause: String): String {
+        val orderBy = orderByClause.ifEmpty { "ORDER BY user, host" }
+        return """
+            SELECT
+                user as username,
+                host,
+                IFNULL(DATE_FORMAT(password_last_changed, '%Y-%m-%d %H:%i:%s'), '') as password_last_changed,
+                IFNULL(password_lifetime, 0) as password_lifetime,
+                account_locked = 'Y' as account_locked,
+                COUNT(*) OVER() as total_count,
+                SUM(CASE WHEN account_locked = 'Y' THEN 1 ELSE 0 END) OVER() as locked_count
+            FROM mysql.user
+            WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+            $filterClause
             $orderBy
             LIMIT ? OFFSET ?
         """.trimIndent()
@@ -199,6 +226,25 @@ class MySQLDialect : DatabaseDialect {
             IS_GRANTABLE as is_grantable
         FROM information_schema.TABLE_PRIVILEGES
         WHERE GRANTEE = ?
+    """.trimIndent()
+
+    override fun getAllSchemaPrivilegesQuery(): String = """
+        SELECT
+            GRANTEE as grantee,
+            TABLE_SCHEMA as db,
+            PRIVILEGE_TYPE as privilege,
+            IS_GRANTABLE as is_grantable
+        FROM information_schema.SCHEMA_PRIVILEGES
+    """.trimIndent()
+
+    override fun getAllTablePrivilegesQuery(): String = """
+        SELECT
+            GRANTEE as grantee,
+            TABLE_SCHEMA as db,
+            TABLE_NAME as tbl,
+            PRIVILEGE_TYPE as privilege,
+            IS_GRANTABLE as is_grantable
+        FROM information_schema.TABLE_PRIVILEGES
     """.trimIndent()
 
     override fun getGrantSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {

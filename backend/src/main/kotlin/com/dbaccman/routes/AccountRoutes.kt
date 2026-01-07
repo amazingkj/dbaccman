@@ -29,6 +29,7 @@ fun Route.accountRoutes() {
                     val pageSize = call.request.queryParameters["pageSize"]?.toIntOrNull()
                     val sortBy = call.request.queryParameters["sortBy"]
                     val sortOrder = call.request.queryParameters["sortOrder"] ?: "asc"
+                    val filter = call.request.queryParameters["filter"]  // "expiring" or "locked"
 
                     call.response.header(HttpHeaders.CacheControl, "no-cache, no-store, must-revalidate")
                     call.response.header(HttpHeaders.Pragma, "no-cache")
@@ -38,7 +39,7 @@ fun Route.accountRoutes() {
                         // Return paginated response
                         val validPage = maxOf(1, page)
                         val validPageSize = pageSize.coerceIn(1, 100)
-                        val result = accountService.getPaginatedAccounts(sessionId, validPage, validPageSize, sortBy, sortOrder)
+                        val result = accountService.getPaginatedAccounts(sessionId, validPage, validPageSize, sortBy, sortOrder, filter)
                         call.respond(result)
                     } else {
                         // Return all accounts (backward compatibility)

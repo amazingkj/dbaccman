@@ -41,11 +41,32 @@ interface DatabaseDialect {
     fun getAccountCountQuery(): String
 
     /**
+     * Returns the WHERE clause for filtering locked accounts.
+     * This is used to construct filtered queries dynamically.
+     */
+    fun getLockedAccountsWhereClause(): String
+
+    /**
+     * Returns the WHERE clause for filtering expiring accounts (within N days).
+     * This is used to construct filtered queries dynamically.
+     * @param days Number of days until expiry threshold
+     */
+    fun getExpiringAccountsWhereClause(days: Int): String
+
+    /**
      * Returns paginated accounts query with LIMIT/OFFSET.
      * Parameters: offset (Int), limit (Int)
      * @param orderByClause Optional ORDER BY clause for sorting (e.g., "ORDER BY username ASC")
+     * @param filterClause Optional WHERE clause for filtering (e.g., locked/expiring accounts)
      */
-    fun getPaginatedAccountsQuery(orderByClause: String = ""): String
+    fun getPaginatedAccountsQuery(orderByClause: String = "", filterClause: String = ""): String
+
+    /**
+     * Returns optimized paginated accounts query that includes total_count and locked_count
+     * using window functions to reduce multiple queries to one.
+     * Returns columns: username, host, password_last_changed, password_lifetime, account_locked, total_count, locked_count
+     */
+    fun getOptimizedPaginatedAccountsQuery(orderByClause: String = "", filterClause: String = ""): String
 
     fun getCreateUserSql(username: String, host: String, password: String): String
 
@@ -86,6 +107,18 @@ interface DatabaseDialect {
     fun getSchemaPrivilegesQuery(): String
 
     fun getTablePrivilegesQuery(): String
+
+    /**
+     * Get all schema-level privileges for all users (no WHERE clause on grantee).
+     * Used for batch export operations.
+     */
+    fun getAllSchemaPrivilegesQuery(): String
+
+    /**
+     * Get all table-level privileges for all users (no WHERE clause on grantee).
+     * Used for batch export operations.
+     */
+    fun getAllTablePrivilegesQuery(): String
 
     fun getGrantSql(privileges: List<String>, database: String, table: String, username: String, host: String): String
 

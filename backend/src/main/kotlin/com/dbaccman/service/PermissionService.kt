@@ -55,6 +55,55 @@ class PermissionService {
         }
     }
 
+    /**
+     * Get all permissions for all users in a single batch query.
+     * Returns a map of grantee (username@host) to their permissions.
+     * This is much more efficient than calling getUserPermissions() N times.
+     */
+    fun getAllUsersPermissions(sessionId: String): Map<String, List<Permission>> {
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val permissionsByUser = mutableMapOf<String, MutableList<Permission>>()
+
+            // Schema-level privileges (all users)
+            val schemaSql = dialect.getAllSchemaPrivilegesQuery()
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery(schemaSql).use { rs ->
+                    while (rs.next()) {
+                        val grantee = rs.getString("grantee")
+                        val permission = Permission(
+                            grantee = grantee,
+                            database = rs.getString("db"),
+                            table = "*",
+                            privilege = rs.getString("privilege"),
+                            isGrantable = rs.getString("is_grantable") == "YES"
+                        )
+                        permissionsByUser.getOrPut(grantee) { mutableListOf() }.add(permission)
+                    }
+                }
+            }
+
+            // Table-level privileges (all users)
+            val tableSql = dialect.getAllTablePrivilegesQuery()
+            conn.createStatement().use { stmt ->
+                stmt.executeQuery(tableSql).use { rs ->
+                    while (rs.next()) {
+                        val grantee = rs.getString("grantee")
+                        val permission = Permission(
+                            grantee = grantee,
+                            database = rs.getString("db"),
+                            table = rs.getString("tbl"),
+                            privilege = rs.getString("privilege"),
+                            isGrantable = rs.getString("is_grantable") == "YES"
+                        )
+                        permissionsByUser.getOrPut(grantee) { mutableListOf() }.add(permission)
+                    }
+                }
+            }
+
+            permissionsByUser
+        }
+    }
+
     fun grantPermission(sessionId: String, request: GrantPermissionRequest) {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getGrantSql(

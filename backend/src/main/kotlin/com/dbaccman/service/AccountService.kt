@@ -72,29 +72,64 @@ class AccountService {
     }
 
     /**
+     * Build filter WHERE clause based on filter parameter
+     */
+    private fun buildFilterClause(filter: String?, dialect: DatabaseDialect): String {
+        return when (filter?.lowercase()) {
+            "locked" -> dialect.getLockedAccountsWhereClause()
+            "expiring" -> dialect.getExpiringAccountsWhereClause(30) // 30 days for expiring
+            else -> ""
+        }
+    }
+
+    /**
+     * Get filtered count for pagination
+     */
+    private fun getFilteredCount(conn: java.sql.Connection, dialect: DatabaseDialect, filter: String?): Int {
+        val baseCountQuery = dialect.getAccountCountQuery()
+        val filterClause = buildFilterClause(filter, dialect)
+
+        // Inject filter clause before any trailing clauses
+        val filteredCountQuery = if (filterClause.isNotEmpty()) {
+            baseCountQuery.replace(
+                Regex("(WHERE .+?)(\$)", RegexOption.DOT_MATCHES_ALL),
+                "$1 $filterClause$2"
+            )
+        } else {
+            baseCountQuery
+        }
+
+        return conn.createStatement().use { stmt ->
+            stmt.executeQuery(filteredCountQuery).use { rs ->
+                if (rs.next()) rs.getInt("count") else 0
+            }
+        }
+    }
+
+    /**
      * Get paginated accounts with stats.
+     * Optimized: Uses single query with window functions to get data + counts together.
      */
     fun getPaginatedAccounts(
         sessionId: String,
         page: Int,
         pageSize: Int,
         sortBy: String? = null,
-        sortOrder: String = "asc"
+        sortOrder: String = "asc",
+        filter: String? = null
     ): PaginatedAccountsResponse {
         val isContainerRoot = SessionConnectionManager.isContainerRoot(sessionId)
 
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            // 1. Get total count
-            val totalCount = conn.createStatement().use { stmt ->
-                stmt.executeQuery(dialect.getAccountCountQuery()).use { rs ->
-                    if (rs.next()) rs.getInt("count") else 0
-                }
-            }
-
-            // 2. Get paginated data with sorting
             val offset = (page - 1) * pageSize
             val orderByClause = buildOrderByClause(sortBy, sortOrder, dialect)
-            val sql = dialect.getPaginatedAccountsQuery(orderByClause)
+            val filterClause = buildFilterClause(filter, dialect)
+
+            // Use optimized query that returns total_count and locked_count via window functions
+            val sql = dialect.getOptimizedPaginatedAccountsQuery(orderByClause, filterClause)
+
+            var totalCount = 0
+            var lockedCount = 0
 
             val accounts = conn.prepareStatement(sql).use { stmt ->
                 // Oracle uses OFFSET first, then FETCH (limit)
@@ -109,7 +144,15 @@ class AccountService {
 
                 stmt.executeQuery().use { rs ->
                     val result = mutableListOf<Account>()
+                    var firstRow = true
                     while (rs.next()) {
+                        // Get counts from the first row (same for all rows due to window function)
+                        if (firstRow) {
+                            totalCount = rs.getInt("total_count")
+                            lockedCount = rs.getInt("locked_count")
+                            firstRow = false
+                        }
+
                         val account = mapResultSetToAccount(rs)
                         // Strip C## prefix for display in CDB root
                         if (isContainerRoot && dialect is OracleDialect) {
@@ -121,18 +164,6 @@ class AccountService {
                         }
                     }
                     result
-                }
-            }
-
-            // 3. Get locked count for stats (from the full dataset)
-            val lockedCount = conn.createStatement().use { stmt ->
-                val lockedSql = when (dialect) {
-                    is OracleDialect -> "SELECT COUNT(*) FROM DBA_USERS WHERE ACCOUNT_STATUS LIKE '%LOCKED%' AND USERNAME NOT IN (${dialect.getSystemUsers().joinToString { "'$it'" }})"
-                    is MySQLDialect -> "SELECT COUNT(*) FROM mysql.user WHERE account_locked = 'Y' AND user NOT IN (${dialect.getSystemUsers().joinToString { "'$it'" }})"
-                    else -> "SELECT COUNT(*) FROM pg_roles WHERE rolcanlogin = false AND rolname NOT IN (${dialect.getSystemUsers().joinToString { "'$it'" }})"
-                }
-                stmt.executeQuery(lockedSql).use { rs ->
-                    if (rs.next()) rs.getInt(1) else 0
                 }
             }
 
@@ -383,7 +414,7 @@ class AccountService {
     }
 
     fun setDefaultTablespace(sessionId: String, username: String, host: String, tablespace: String, quota: String? = null) {
-        useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+        useOracleScriptContext(sessionId) { conn, dialect ->
             // Set default tablespace
             val setDefaultSql = dialect.getSetDefaultTablespaceSql(username, host, tablespace)
             if (setDefaultSql != null) {
@@ -619,22 +650,23 @@ class AccountService {
         if (includePermissions) {
             sb.appendLine("username,host,password_last_changed,password_lifetime,account_locked,database,table,privilege")
 
-            // 병렬로 모든 계정의 권한 조회 (N+1 → 병렬 처리)
+            // Optimized: Single batch query for all permissions (N+1 → 1 query)
             val permissionService = PermissionService()
-            val accountPermissions = runBlocking {
-                accounts.map { account ->
-                    async(Dispatchers.IO) {
-                        val permissions = try {
-                            permissionService.getUserPermissions(sessionId, account.username, account.host)
-                        } catch (e: Exception) {
-                            emptyList()
-                        }
-                        account to permissions
-                    }
-                }.awaitAll()
+            val allPermissions = try {
+                permissionService.getAllUsersPermissions(sessionId)
+            } catch (e: Exception) {
+                logger.warn("Failed to fetch all permissions for export: ${e.message}")
+                emptyMap()
             }
 
-            accountPermissions.forEach { (account, permissions) ->
+            accounts.forEach { account ->
+                val grantee = "${account.username}@${account.host}"
+                // Try different grantee formats (Oracle uses uppercase, MySQL uses 'user'@'host')
+                val permissions = allPermissions[grantee]
+                    ?: allPermissions[account.username.uppercase()]
+                    ?: allPermissions["'${account.username}'@'${account.host}'"]
+                    ?: emptyList()
+
                 if (permissions.isEmpty()) {
                     sb.appendLine("${escapeCsv(account.username)},${escapeCsv(account.host)},${escapeCsv(account.passwordLastChanged ?: "")},${account.passwordLifetime ?: ""},${account.accountLocked},,,")
                 } else {

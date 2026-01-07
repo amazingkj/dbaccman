@@ -78,6 +78,7 @@ fun Application.module() {
             queryRoutes()
             dashboardRoutes()
             roleRoutes()
+            userRoutes()  // User-specific routes (own schema only)
         }
 
         get("/health") {

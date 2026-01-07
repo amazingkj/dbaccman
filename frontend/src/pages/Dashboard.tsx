@@ -11,7 +11,6 @@ import {
   Button,
   Spin,
   Progress,
-  message,
 } from 'antd'
 import {
   UserOutlined,
@@ -287,16 +286,8 @@ function AdminDashboard() {
       <Row gutter={16} style={{ marginBottom: 24 }}>
         <Col span={24}>
           <Card
-              style={{ borderRadius: 8, cursor: 'pointer' }}
+              style={{ borderRadius: 8 }}
               styles={{ body: { padding: '16px 24px' } }}
-              onClick={() => {
-                if (healthScore.issues.length > 0) {
-                  // Show alerts popup
-                  setAlertsDismissed(false)
-                } else {
-                  message.success('All systems are running normally')
-                }
-              }}
             >
               <Row align="middle" gutter={24}>
                 <Col>
@@ -474,7 +465,7 @@ function AdminDashboard() {
                   alignItems: 'center',
                   cursor: 'pointer',
                 }}
-                onClick={() => navigate('/tablespaces')}
+                onClick={() => navigate('/tablespaces?sort=usage')}
               >
                 <Space>
                   <HddOutlined style={{ color: '#fa8c16' }} />

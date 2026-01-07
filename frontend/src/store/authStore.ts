@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import type { User, LoginResponse } from '../types'
+import { apiCache } from '../utils/cache'
 
 // Session timeout: 30 minutes (in milliseconds)
 export const SESSION_TIMEOUT_MS = 30 * 60 * 1000
@@ -40,14 +41,16 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: true,
           lastActivity: Date.now(),
         }),
-      logout: () =>
+      logout: () => {
+        apiCache.clear() // Clear all cached API responses
         set({
           token: null,
           user: null,
           passwordExpiryDays: null,
           isAuthenticated: false,
           lastActivity: Date.now(),
-        }),
+        })
+      },
       updateLastActivity: () =>
         set({
           lastActivity: Date.now(),

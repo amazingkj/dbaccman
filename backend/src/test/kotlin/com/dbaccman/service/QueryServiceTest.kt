@@ -738,4 +738,232 @@ class QueryServiceTest {
             }
         }
     }
+
+    // ==================== Schema Switching Tests ====================
+
+    @Nested
+    @DisplayName("Schema Switching and Run as User Tests")
+    inner class SchemaSwitchingTests {
+
+        @Test
+        @DisplayName("executeQuery should switch schema when account is provided")
+        fun testExecuteQueryWithSchemaSwitch() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockSwitchStatement = mockk<Statement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockMetaData = mockk<ResultSetMetaData>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { SessionConnectionManager.isContainerRoot("test-session") } returns false
+
+            // Schema switch SQL
+            every { mockDialect.getSwitchSchemaSql("testdb") } returns "USE testdb"
+
+            // First createStatement is for schema switch
+            every { mockConnection.createStatement() } returnsMany listOf(mockSwitchStatement, mockStatement)
+            every { mockSwitchStatement.execute("USE testdb") } returns true
+            every { mockSwitchStatement.close() } just Runs
+
+            // Second createStatement is for the actual query
+            every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.executeQuery(any()) } returns mockResultSet
+            every { mockResultSet.metaData } returns mockMetaData
+            every { mockMetaData.columnCount } returns 1
+            every { mockMetaData.getColumnLabel(1) } returns "result"
+            every { mockMetaData.getColumnTypeName(1) } returns "VARCHAR"
+            every { mockMetaData.isAutoIncrement(1) } returns false
+            every { mockMetaData.isNullable(1) } returns java.sql.ResultSetMetaData.columnNullable
+            every { mockResultSet.next() } returnsMany listOf(true, false)
+            every { mockResultSet.getObject(1) } returns "test_value"
+            every { mockResultSet.close() } just Runs
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val result = queryService.executeQuery(
+                sessionId = "test-session",
+                query = "SELECT * FROM users",
+                account = "testdb",  // This triggers schema switch
+                username = "admin",
+                ipAddress = "127.0.0.1"
+            )
+
+            // Verify schema switch was executed
+            verify { mockSwitchStatement.execute("USE testdb") }
+
+            assertEquals(1, result.columns.size)
+            assertEquals("result", result.columns[0])
+            assertTrue(result.isSelectQuery)
+        }
+
+        @Test
+        @DisplayName("executeQuery should not switch schema when account is null")
+        fun testExecuteQueryWithoutSchemaSwitch() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockMetaData = mockk<ResultSetMetaData>()
+            val mockDialect = mockk<DatabaseDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { SessionConnectionManager.isContainerRoot("test-session") } returns false
+            every { mockDialect.getSwitchSchemaSql(any()) } returns null
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.executeQuery(any()) } returns mockResultSet
+            every { mockResultSet.metaData } returns mockMetaData
+            every { mockMetaData.columnCount } returns 1
+            every { mockMetaData.getColumnLabel(1) } returns "id"
+            every { mockMetaData.getColumnTypeName(1) } returns "INT"
+            every { mockMetaData.isAutoIncrement(1) } returns false
+            every { mockMetaData.isNullable(1) } returns java.sql.ResultSetMetaData.columnNullable
+            every { mockResultSet.next() } returnsMany listOf(true, false)
+            every { mockResultSet.getObject(1) } returns 1
+            every { mockResultSet.close() } just Runs
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val result = queryService.executeQuery(
+                sessionId = "test-session",
+                query = "SELECT id FROM users",
+                account = null,  // No schema switch
+                username = "admin",
+                ipAddress = "127.0.0.1"
+            )
+
+            // getSwitchSchemaSql should never be called with a non-null value
+            verify(exactly = 0) { mockDialect.getSwitchSchemaSql(any()) }
+
+            assertEquals(1, result.rowCount)
+        }
+
+        @Test
+        @DisplayName("executeQuery should not switch schema when account is blank")
+        fun testExecuteQueryWithBlankAccount() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockMetaData = mockk<ResultSetMetaData>()
+            val mockDialect = mockk<DatabaseDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { SessionConnectionManager.isContainerRoot("test-session") } returns false
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.executeQuery(any()) } returns mockResultSet
+            every { mockResultSet.metaData } returns mockMetaData
+            every { mockMetaData.columnCount } returns 1
+            every { mockMetaData.getColumnLabel(1) } returns "id"
+            every { mockMetaData.getColumnTypeName(1) } returns "INT"
+            every { mockMetaData.isAutoIncrement(1) } returns false
+            every { mockMetaData.isNullable(1) } returns java.sql.ResultSetMetaData.columnNullable
+            every { mockResultSet.next() } returnsMany listOf(true, false)
+            every { mockResultSet.getObject(1) } returns 1
+            every { mockResultSet.close() } just Runs
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val result = queryService.executeQuery(
+                sessionId = "test-session",
+                query = "SELECT id FROM users",
+                account = "   ",  // Blank account should be ignored
+                username = "admin",
+                ipAddress = "127.0.0.1"
+            )
+
+            // getSwitchSchemaSql should never be called
+            verify(exactly = 0) { mockDialect.getSwitchSchemaSql(any()) }
+
+            assertEquals(1, result.rowCount)
+        }
+
+        @Test
+        @DisplayName("executeQuery should throw exception when schema switch fails")
+        fun testExecuteQuerySchemaSwithFailure() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { SessionConnectionManager.isContainerRoot("test-session") } returns false
+
+            // Schema switch SQL
+            every { mockDialect.getSwitchSchemaSql("nonexistent_db") } returns "USE nonexistent_db"
+
+            every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.execute("USE nonexistent_db") } throws RuntimeException("Unknown database 'nonexistent_db'")
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val exception = assertThrows<QueryExecutionException> {
+                queryService.executeQuery(
+                    sessionId = "test-session",
+                    query = "SELECT * FROM users",
+                    account = "nonexistent_db",
+                    username = "admin",
+                    ipAddress = "127.0.0.1"
+                )
+            }
+
+            assertTrue(exception.message?.contains("Failed to switch to schema") == true)
+        }
+
+        @Test
+        @DisplayName("Run as User should use account parameter for schema context")
+        fun testRunAsUserWithDifferentSchema() {
+            val mockConnection = mockk<Connection>()
+            val mockStatement = mockk<Statement>()
+            val mockSwitchStatement = mockk<Statement>()
+            val mockResultSet = mockk<ResultSet>()
+            val mockMetaData = mockk<ResultSetMetaData>()
+            val mockDialect = mockk<MySQLDialect>()
+
+            every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
+            every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
+            every { SessionConnectionManager.isContainerRoot("test-session") } returns false
+
+            // "Run as User" uses schema switch - user selects a different user/schema to run query as
+            every { mockDialect.getSwitchSchemaSql("other_user_schema") } returns "USE other_user_schema"
+
+            every { mockConnection.createStatement() } returnsMany listOf(mockSwitchStatement, mockStatement)
+            every { mockSwitchStatement.execute("USE other_user_schema") } returns true
+            every { mockSwitchStatement.close() } just Runs
+
+            every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.executeQuery(any()) } returns mockResultSet
+            every { mockResultSet.metaData } returns mockMetaData
+            every { mockMetaData.columnCount } returns 2
+            every { mockMetaData.getColumnLabel(1) } returns "table_name"
+            every { mockMetaData.getColumnLabel(2) } returns "owner"
+            every { mockMetaData.getColumnTypeName(any()) } returns "VARCHAR"
+            every { mockMetaData.isAutoIncrement(any()) } returns false
+            every { mockMetaData.isNullable(any()) } returns java.sql.ResultSetMetaData.columnNullable
+            every { mockResultSet.next() } returnsMany listOf(true, true, false)
+            every { mockResultSet.getObject(1) } returnsMany listOf("users_table", "orders_table")
+            every { mockResultSet.getObject(2) } returnsMany listOf("other_user_schema", "other_user_schema")
+            every { mockResultSet.close() } just Runs
+            every { mockStatement.close() } just Runs
+            every { mockConnection.close() } just Runs
+
+            val result = queryService.executeQuery(
+                sessionId = "test-session",
+                query = "SELECT table_name, owner FROM all_tables WHERE owner = USER",
+                account = "other_user_schema",  // Run as different user/schema
+                username = "admin",
+                ipAddress = "127.0.0.1"
+            )
+
+            // Verify the schema was switched to run as the other user
+            verify { mockSwitchStatement.execute("USE other_user_schema") }
+
+            assertEquals(2, result.columns.size)
+            assertEquals(2, result.rowCount)
+            assertTrue(result.isSelectQuery)
+        }
+    }
 }

@@ -25,6 +25,7 @@ import {
   HddOutlined,
   OrderedListOutlined,
   SyncOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons'
 import { tablesApi, type TableDataResult, type ColumnInfo } from '../api/tables'
 import type { DatabaseInfo, TableInfo, IndexInfo } from '../types'
@@ -210,28 +211,42 @@ function Tables() {
     setSelectedTable(null)
     setCurrentPage(1) // Reset to first page
 
-    // Step 1: Load tables quickly
+    // Load tables
     await fetchTables(value)
-
-    // Step 2: Gather stats in background
-    gatherStatsInBackground(value)
   }
 
-  const gatherStatsInBackground = async (database: string) => {
-    setGatheringStats(true)
-    try {
-      await tablesApi.gatherStats(database)
-      // Refresh data after gathering stats
-      await Promise.all([
-        fetchDatabases(),
-        fetchTables(database)
-      ])
-    } catch {
-      // Silent fail for background operation
-      console.error('Failed to gather statistics')
-    } finally {
-      setGatheringStats(false)
-    }
+  const handleGatherStats = () => {
+    if (!selectedDb) return
+
+    Modal.confirm({
+      title: 'Gather Statistics',
+      content: (
+        <div>
+          <p>This will gather statistics for schema <strong>{selectedDb}</strong>.</p>
+          <p style={{ color: '#ff4d4f' }}>
+            Warning: This operation may take several minutes and impact database performance.
+          </p>
+        </div>
+      ),
+      okText: 'Gather Stats',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setGatheringStats(true)
+        try {
+          await tablesApi.gatherStats(selectedDb)
+          message.success('Statistics gathered successfully')
+          // Refresh data after gathering stats
+          await Promise.all([
+            fetchDatabases(),
+            fetchTables(selectedDb)
+          ])
+        } catch {
+          message.error('Failed to gather statistics')
+        } finally {
+          setGatheringStats(false)
+        }
+      }
+    })
   }
 
   const formatSize = (bytes: number): string => {
@@ -255,7 +270,7 @@ function Tables() {
     {
       title: '#',
       key: 'index',
-      width: 60,
+      width: 45,
       render: (_: unknown, __: TableInfo, index: number) => (
         <span style={{ color: '#8c8c8c' }}>
           {(currentPage - 1) * pageSize + index + 1}
@@ -533,11 +548,19 @@ function Tables() {
               />
               <Button
                 icon={<ReloadOutlined />}
-                onClick={() => selectedDb && gatherStatsInBackground(selectedDb)}
+                onClick={() => selectedDb && fetchTables(selectedDb)}
+                disabled={!selectedDb || loading}
+              >
+                Refresh
+              </Button>
+              <Button
+                icon={<BarChartOutlined />}
+                onClick={handleGatherStats}
                 disabled={!selectedDb || gatheringStats}
                 loading={gatheringStats}
+                danger
               >
-                {gatheringStats ? 'Updating...' : 'Refresh'}
+                {gatheringStats ? 'Gathering...' : 'Gather Stats'}
               </Button>
             </Space>
           </Col>
@@ -632,7 +655,7 @@ function Tables() {
                   {tableData ? (
                     <Table
                       columns={tableData.columns.map((col, idx) => ({
-                        title: col,
+                        title: <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{col}</span>,
                         dataIndex: idx.toString(),
                         key: col,
                         ellipsis: true,

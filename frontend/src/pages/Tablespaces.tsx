@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Typography,
   Table,
@@ -129,6 +130,9 @@ function formatBytes(bytes: number): string {
 }
 
 function Tablespaces() {
+  const [searchParams] = useSearchParams()
+  const sortByUsage = searchParams.get('sort') === 'usage'
+
   const [tablespaces, setTablespaces] = useState<TablespaceInfo[]>([])
   const [selectedTablespace, setSelectedTablespace] = useState<TablespaceInfo | null>(null)
   const [tablesInTablespace, setTablesInTablespace] = useState<TableInfo[]>([])
@@ -327,7 +331,19 @@ function Tablespaces() {
     return value.toString().toLowerCase().includes(search)
   }
 
-  const filteredTablespaces = tablespaces.filter(filterBySearch)
+  // Sort by usage if URL has ?sort=usage
+  const sortedTablespaces = useMemo(() => {
+    if (sortByUsage) {
+      return [...tablespaces].sort((a, b) => {
+        const usageA = a.fileSize > 0 ? (a.allocatedSize / a.fileSize) : 0
+        const usageB = b.fileSize > 0 ? (b.allocatedSize / b.fileSize) : 0
+        return usageB - usageA // Descending order
+      })
+    }
+    return tablespaces
+  }, [tablespaces, sortByUsage])
+
+  const filteredTablespaces = sortedTablespaces.filter(filterBySearch)
 
   const columns = [
     {

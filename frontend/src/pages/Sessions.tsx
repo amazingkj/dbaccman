@@ -53,7 +53,7 @@ const statCardStyles = {
     bgColor: 'rgba(124, 143, 172, 0.1)',
     icon: <PauseCircleOutlined />,
   },
-  longRunning: {
+  slowQueries: {
     color: '#fa896b',
     bgColor: 'rgba(250, 137, 107, 0.1)',
     icon: <WarningOutlined />,
@@ -346,7 +346,8 @@ function Sessions() {
   }
 
   // Long running threshold: 30 minutes (1800 seconds)
-  const LONG_RUNNING_THRESHOLD = 1800
+  // Threshold for red color indicator (30 minutes = really long running)
+  const RED_HIGHLIGHT_THRESHOLD = 1800
 
   // Idle session states: MySQL uses 'Sleep', Oracle uses 'INACTIVE', PostgreSQL uses 'idle'
   const isIdleSession = (command: string) =>
@@ -396,7 +397,7 @@ function Sessions() {
     total: sessions.length,
     active: querySessions.length,
     sleeping: connectionSessions.length,
-    longRunning: sessions.filter((s) => s.time > LONG_RUNNING_THRESHOLD && !isIdleSession(s.command)).length,
+    slowQueries: sessions.filter((s) => s.time > SLOW_QUERY_THRESHOLD && !isIdleSession(s.command)).length,
   }), [sessions, querySessions.length, connectionSessions.length])
 
   // Column generator with page-aware row numbering
@@ -472,7 +473,7 @@ function Sessions() {
       key: 'time',
       width: 100,
       render: (time: number) => {
-        const isLong = time > LONG_RUNNING_THRESHOLD
+        const isLong = time > RED_HIGHLIGHT_THRESHOLD
         return (
           <Tooltip title={`${time} seconds`}>
             <Tag color={isLong ? 'red' : 'default'} icon={<ClockCircleOutlined />}>
@@ -592,9 +593,9 @@ function Sessions() {
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <StatCard
-            title="Long Running (>30m)"
-            value={stats.longRunning}
-            style={statCardStyles.longRunning}
+            title="Slow Queries (>60s)"
+            value={stats.slowQueries}
+            style={statCardStyles.slowQueries}
           />
         </Col>
       </Row>

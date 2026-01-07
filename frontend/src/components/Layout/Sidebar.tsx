@@ -26,7 +26,7 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
 
   const isAdmin = user?.role === 'admin'
 
-  // Admin sees all menu items, regular users only see Dashboard
+  // Admin sees all menu items, regular users see their own schema items
   const menuItems = isAdmin
     ? [
         {
@@ -70,6 +70,21 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           key: '/dashboard',
           icon: <DashboardOutlined />,
           label: 'Dashboard',
+        },
+        {
+          key: '/my-tables',
+          icon: <TableOutlined />,
+          label: 'My Tables',
+        },
+        {
+          key: '/my-tablespaces',
+          icon: <HddOutlined />,
+          label: 'My Tablespaces',
+        },
+        {
+          key: '/my-console',
+          icon: <CodeOutlined />,
+          label: 'My Console',
         },
       ]
 

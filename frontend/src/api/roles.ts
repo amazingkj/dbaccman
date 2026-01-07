@@ -6,15 +6,26 @@ import type {
   RevokeRoleRequest,
   PdbInfo,
 } from '../types'
+import { apiCache, CACHE_TTL, CACHE_KEYS } from '../utils/cache'
 
 export const rolesApi = {
   // Get all available roles
-  list: () =>
-    apiClient.get<Role[]>('/roles'),
+  list: async () => {
+    const cached = apiCache.get<Role[]>(CACHE_KEYS.ROLES)
+    if (cached) return { data: cached }
+    const response = await apiClient.get<Role[]>('/roles')
+    apiCache.set(CACHE_KEYS.ROLES, response.data, CACHE_TTL.MEDIUM)
+    return response
+  },
 
   // Get common/recommended roles
-  getCommon: () =>
-    apiClient.get<string[]>('/roles/common'),
+  getCommon: async () => {
+    const cached = apiCache.get<string[]>(CACHE_KEYS.COMMON_ROLES)
+    if (cached) return { data: cached }
+    const response = await apiClient.get<string[]>('/roles/common')
+    apiCache.set(CACHE_KEYS.COMMON_ROLES, response.data, CACHE_TTL.LONG)
+    return response
+  },
 
   // Get roles for a specific user
   getUserRoles: (username: string) =>
@@ -27,12 +38,20 @@ export const rolesApi = {
   // Revoke roles from a user
   revoke: (data: RevokeRoleRequest) =>
     apiClient.post('/roles/revoke', data),
+
+  // Cache invalidation
+  invalidateList: () => apiCache.invalidate(CACHE_KEYS.ROLES),
 }
 
 export const pdbApi = {
   // Get list of PDBs
-  list: () =>
-    apiClient.get<PdbInfo[]>('/pdb'),
+  list: async () => {
+    const cached = apiCache.get<PdbInfo[]>(CACHE_KEYS.PDBS)
+    if (cached) return { data: cached }
+    const response = await apiClient.get<PdbInfo[]>('/pdb')
+    apiCache.set(CACHE_KEYS.PDBS, response.data, CACHE_TTL.LONG)
+    return response
+  },
 
   // Get current container
   getCurrent: () =>
@@ -41,4 +60,7 @@ export const pdbApi = {
   // Switch to a PDB
   switch: (pdbName: string) =>
     apiClient.post(`/pdb/switch/${encodeURIComponent(pdbName)}`),
+
+  // Cache invalidation
+  invalidateList: () => apiCache.invalidate(CACHE_KEYS.PDBS),
 }

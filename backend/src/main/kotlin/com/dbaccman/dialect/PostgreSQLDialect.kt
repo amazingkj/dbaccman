@@ -100,7 +100,12 @@ class PostgreSQLDialect : DatabaseDialect {
         WHERE usename NOT IN (${getSystemUsers().joinToString { "'$it'" }})
     """.trimIndent()
 
-    override fun getPaginatedAccountsQuery(orderByClause: String): String {
+    override fun getLockedAccountsWhereClause(): String = "AND rolcanlogin = false"
+
+    override fun getExpiringAccountsWhereClause(days: Int): String =
+        "AND valuntil IS NOT NULL AND valuntil <= NOW() + INTERVAL '$days days' AND rolcanlogin = true"
+
+    override fun getPaginatedAccountsQuery(orderByClause: String, filterClause: String): String {
         val orderBy = orderByClause.ifEmpty { "ORDER BY usename" }
         return """
             SELECT
@@ -112,6 +117,27 @@ class PostgreSQLDialect : DatabaseDialect {
             FROM pg_user
             JOIN pg_roles ON pg_user.usename = pg_roles.rolname
             WHERE usename NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+            $filterClause
+            $orderBy
+            LIMIT ? OFFSET ?
+        """.trimIndent()
+    }
+
+    override fun getOptimizedPaginatedAccountsQuery(orderByClause: String, filterClause: String): String {
+        val orderBy = orderByClause.ifEmpty { "ORDER BY usename" }
+        return """
+            SELECT
+                usename as username,
+                'localhost' as host,
+                COALESCE(TO_CHAR(valuntil, 'YYYY-MM-DD HH24:MI:SS'), '') as password_last_changed,
+                0 as password_lifetime,
+                CASE WHEN rolcanlogin = false THEN 1 ELSE 0 END as account_locked,
+                COUNT(*) OVER() as total_count,
+                SUM(CASE WHEN rolcanlogin = false THEN 1 ELSE 0 END) OVER() as locked_count
+            FROM pg_user
+            JOIN pg_roles ON pg_user.usename = pg_roles.rolname
+            WHERE usename NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+            $filterClause
             $orderBy
             LIMIT ? OFFSET ?
         """.trimIndent()
@@ -194,6 +220,27 @@ class PostgreSQLDialect : DatabaseDialect {
             is_grantable as is_grantable
         FROM information_schema.table_privileges
         WHERE grantee = ?
+    """.trimIndent()
+
+    override fun getAllSchemaPrivilegesQuery(): String = """
+        SELECT
+            grantee as grantee,
+            table_schema as db,
+            privilege_type as privilege,
+            is_grantable as is_grantable
+        FROM information_schema.table_privileges
+        WHERE grantee NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+    """.trimIndent()
+
+    override fun getAllTablePrivilegesQuery(): String = """
+        SELECT
+            grantee as grantee,
+            table_schema as db,
+            table_name as tbl,
+            privilege_type as privilege,
+            is_grantable as is_grantable
+        FROM information_schema.table_privileges
+        WHERE grantee NOT IN (${getSystemUsers().joinToString { "'$it'" }})
     """.trimIndent()
 
     // PostgreSQL database-level privileges (CONNECT, CREATE, TEMPORARY)
