@@ -78,8 +78,8 @@ const ORACLE_SYSTEM_PRIVILEGES = [
   'UNLIMITED TABLESPACE',
 ]
 
-// PostgreSQL privileges
-const POSTGRESQL_PRIVILEGES = [
+// PostgreSQL table privileges
+const POSTGRESQL_TABLE_PRIVILEGES = [
   'SELECT',
   'INSERT',
   'UPDATE',
@@ -87,6 +87,18 @@ const POSTGRESQL_PRIVILEGES = [
   'TRUNCATE',
   'REFERENCES',
   'TRIGGER',
+]
+
+// PostgreSQL schema privileges
+const POSTGRESQL_SCHEMA_PRIVILEGES = [
+  'USAGE',
+  'CREATE',
+]
+
+// Combined PostgreSQL privileges for grant modal
+const POSTGRESQL_PRIVILEGES = [
+  ...POSTGRESQL_SCHEMA_PRIVILEGES,
+  ...POSTGRESQL_TABLE_PRIVILEGES,
 ]
 
 const getObjectPrivilegesForDbType = (dbType: string | undefined): string[] => {

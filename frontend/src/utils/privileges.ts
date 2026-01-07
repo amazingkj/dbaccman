@@ -64,6 +64,12 @@ export const ORACLE_OBJECT_PRIVILEGES = [
   'REFERENCES',
 ]
 
+// PostgreSQL schema privileges (for Permissions page)
+export const POSTGRESQL_SCHEMA_PRIVILEGES = [
+  'USAGE',
+  'CREATE',
+]
+
 // PostgreSQL table privileges (for Permissions page)
 export const POSTGRESQL_TABLE_PRIVILEGES = [
   'SELECT',
@@ -73,6 +79,12 @@ export const POSTGRESQL_TABLE_PRIVILEGES = [
   'TRUNCATE',
   'REFERENCES',
   'TRIGGER',
+]
+
+// PostgreSQL all privileges (schema + table)
+export const POSTGRESQL_ALL_PRIVILEGES = [
+  ...POSTGRESQL_SCHEMA_PRIVILEGES,
+  ...POSTGRESQL_TABLE_PRIVILEGES,
 ]
 
 // MySQL table privileges (for Permissions page)

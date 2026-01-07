@@ -34,7 +34,7 @@ class PostgreSQLDialect : DatabaseDialect {
         SELECT
             pid,
             usename as sess_user,
-            client_addr::text as host,
+            COALESCE(host(client_addr)::text, 'local') as host,
             datname as database_name,
             state as command,
             EXTRACT(EPOCH FROM (NOW() - backend_start))::integer as time,
@@ -61,7 +61,7 @@ class PostgreSQLDialect : DatabaseDialect {
         SELECT
             pid,
             usename as sess_user,
-            client_addr::text as host,
+            COALESCE(host(client_addr)::text, 'local') as host,
             datname as database_name,
             state as command,
             EXTRACT(EPOCH FROM (NOW() - query_start))::integer as time,
@@ -244,30 +244,39 @@ class PostgreSQLDialect : DatabaseDialect {
     """.trimIndent()
 
     // PostgreSQL database-level privileges (CONNECT, CREATE, TEMPORARY)
-    private val databasePrivileges = setOf("CONNECT", "CREATE", "TEMPORARY", "TEMP")
+    private val databasePrivileges = setOf("CONNECT", "TEMPORARY", "TEMP")
+
+    // PostgreSQL schema-level privileges (USAGE, CREATE)
+    private val schemaPrivileges = setOf("USAGE", "CREATE")
 
     override fun getGrantSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
-        // Separate database-level privileges from table-level privileges
+        // Separate privileges by level
         val dbPrivs = privileges.filter { it.uppercase() in databasePrivileges }
-        val tablePrivs = privileges.filterNot { it.uppercase() in databasePrivileges }
+        val schemaPrivs = privileges.filter { it.uppercase() in schemaPrivileges }
+        val tablePrivs = privileges.filterNot { it.uppercase() in databasePrivileges || it.uppercase() in schemaPrivileges }
 
         val statements = mutableListOf<String>()
+        val schemaName = database.ifEmpty { "public" }
 
-        // Handle database-level privileges (CONNECT, CREATE, TEMPORARY)
+        // Handle database-level privileges (CONNECT, TEMPORARY)
         if (dbPrivs.isNotEmpty()) {
             val privList = dbPrivs.joinToString(", ") { it.uppercase() }
-            // If database is empty, use current database
-            val dbName = if (database.isEmpty()) "CURRENT_DATABASE()" else quoteIdentifier(database)
-            statements.add("GRANT $privList ON DATABASE $dbName TO ${quoteIdentifier(username)}")
+            statements.add("GRANT $privList ON DATABASE CURRENT_DATABASE() TO ${quoteIdentifier(username)}")
+        }
+
+        // Handle schema-level privileges (USAGE, CREATE)
+        if (schemaPrivs.isNotEmpty()) {
+            val privList = schemaPrivs.joinToString(", ") { it.uppercase() }
+            statements.add("GRANT $privList ON SCHEMA ${quoteIdentifier(schemaName)} TO ${quoteIdentifier(username)}")
         }
 
         // Handle table-level privileges
         if (tablePrivs.isNotEmpty()) {
             val privList = tablePrivs.joinToString(", ")
             val target = if (table == "*") {
-                "ALL TABLES IN SCHEMA ${quoteIdentifier(database.ifEmpty { "public" })}"
+                "ALL TABLES IN SCHEMA ${quoteIdentifier(schemaName)}"
             } else {
-                "${quoteIdentifier(database.ifEmpty { "public" })}.${quoteIdentifier(table)}"
+                "${quoteIdentifier(schemaName)}.${quoteIdentifier(table)}"
             }
             statements.add("GRANT $privList ON $target TO ${quoteIdentifier(username)}")
         }
@@ -276,26 +285,33 @@ class PostgreSQLDialect : DatabaseDialect {
     }
 
     override fun getRevokeSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
-        // Separate database-level privileges from table-level privileges
+        // Separate privileges by level
         val dbPrivs = privileges.filter { it.uppercase() in databasePrivileges }
-        val tablePrivs = privileges.filterNot { it.uppercase() in databasePrivileges }
+        val schemaPrivs = privileges.filter { it.uppercase() in schemaPrivileges }
+        val tablePrivs = privileges.filterNot { it.uppercase() in databasePrivileges || it.uppercase() in schemaPrivileges }
 
         val statements = mutableListOf<String>()
+        val schemaName = database.ifEmpty { "public" }
 
         // Handle database-level privileges
         if (dbPrivs.isNotEmpty()) {
             val privList = dbPrivs.joinToString(", ") { it.uppercase() }
-            val dbName = if (database.isEmpty()) "CURRENT_DATABASE()" else quoteIdentifier(database)
-            statements.add("REVOKE $privList ON DATABASE $dbName FROM ${quoteIdentifier(username)}")
+            statements.add("REVOKE $privList ON DATABASE CURRENT_DATABASE() FROM ${quoteIdentifier(username)}")
+        }
+
+        // Handle schema-level privileges
+        if (schemaPrivs.isNotEmpty()) {
+            val privList = schemaPrivs.joinToString(", ") { it.uppercase() }
+            statements.add("REVOKE $privList ON SCHEMA ${quoteIdentifier(schemaName)} FROM ${quoteIdentifier(username)}")
         }
 
         // Handle table-level privileges
         if (tablePrivs.isNotEmpty()) {
             val privList = tablePrivs.joinToString(", ")
             val target = if (table == "*") {
-                "ALL TABLES IN SCHEMA ${quoteIdentifier(database.ifEmpty { "public" })}"
+                "ALL TABLES IN SCHEMA ${quoteIdentifier(schemaName)}"
             } else {
-                "${quoteIdentifier(database.ifEmpty { "public" })}.${quoteIdentifier(table)}"
+                "${quoteIdentifier(schemaName)}.${quoteIdentifier(table)}"
             }
             statements.add("REVOKE $privList ON $target FROM ${quoteIdentifier(username)}")
         }
@@ -335,21 +351,16 @@ class PostgreSQLDialect : DatabaseDialect {
 
     override fun getTablesQuery(): String = """
         SELECT
-            table_name as name,
+            t.tablename as name,
             'PostgreSQL' as engine,
-            COALESCE(
-                (SELECT GREATEST(c.reltuples, 0)::bigint
-                 FROM pg_class c
-                 JOIN pg_namespace n ON c.relnamespace = n.oid
-                 WHERE c.relname = t.table_name AND n.nspname = t.table_schema),
-                0
-            ) as row_count,
-            COALESCE(pg_total_relation_size(quote_ident(t.table_schema) || '.' || quote_ident(t.table_name)), 0) as table_size,
+            COALESCE(GREATEST(c.reltuples, 0)::bigint, 0) as row_count,
+            COALESCE(pg_total_relation_size(quote_ident(t.schemaname) || '.' || quote_ident(t.tablename)), 0) as table_size,
             '' as create_time
-        FROM information_schema.tables t
-        WHERE table_schema = ?
-        AND table_type = 'BASE TABLE'
-        ORDER BY table_name
+        FROM pg_tables t
+        LEFT JOIN pg_namespace n ON n.nspname = t.schemaname
+        LEFT JOIN pg_class c ON c.relname = t.tablename AND c.relnamespace = n.oid
+        WHERE t.schemaname = ?
+        ORDER BY t.tablename
     """.trimIndent()
 
     override fun getTableColumnsQuery(): String = """
@@ -403,12 +414,15 @@ class PostgreSQLDialect : DatabaseDialect {
     override fun getTablespacesQuery(): String = """
         SELECT
             spcname as name,
-            'GENERAL' as space_type,
-            pg_tablespace_size(spcname) as file_size,
+            CASE
+                WHEN spcname IN ('pg_default', 'pg_global') THEN 'SYSTEM'
+                ELSE 'GENERAL'
+            END as space_type,
+            0 as file_size,
             pg_tablespace_size(spcname) as allocated_size,
             'ACTIVE' as state
         FROM pg_tablespace
-        WHERE spcname NOT IN ('pg_default', 'pg_global')
+        WHERE spcname != 'pg_global'
         ORDER BY spcname
     """.trimIndent()
 

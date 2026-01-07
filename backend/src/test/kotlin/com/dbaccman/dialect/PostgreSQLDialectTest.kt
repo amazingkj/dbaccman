@@ -208,8 +208,16 @@ class PostgreSQLDialectTest {
     @Test
     @DisplayName("Grant SQL should support multiple database privileges")
     fun testGrantSqlMultipleDatabasePrivileges() {
-        val sql = dialect.getGrantSql(listOf("CONNECT", "CREATE", "TEMPORARY"), "testdb", "*", "testuser", "localhost")
-        assertTrue(sql.contains("GRANT CONNECT, CREATE, TEMPORARY ON DATABASE"))
+        val sql = dialect.getGrantSql(listOf("CONNECT", "TEMPORARY"), "testdb", "*", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT CONNECT, TEMPORARY ON DATABASE"))
+    }
+
+    @Test
+    @DisplayName("Grant SQL should support schema privileges like USAGE and CREATE")
+    fun testGrantSqlSchemaPrivileges() {
+        val sql = dialect.getGrantSql(listOf("USAGE", "CREATE"), "testschema", "*", "testuser", "localhost")
+        assertTrue(sql.contains("GRANT USAGE, CREATE ON SCHEMA"))
+        assertTrue(sql.contains("\"testschema\""))
     }
 
     @Test
@@ -454,9 +462,8 @@ class PostgreSQLDialectTest {
     @DisplayName("Tables query should filter by schema")
     fun testTablesQuery() {
         val query = dialect.getTablesQuery()
-        assertTrue(query.contains("information_schema.tables"))
-        assertTrue(query.contains("table_schema = ?"))
-        assertTrue(query.contains("BASE TABLE"))
+        assertTrue(query.contains("pg_tables"))
+        assertTrue(query.contains("schemaname = ?"))
     }
 
     @Test

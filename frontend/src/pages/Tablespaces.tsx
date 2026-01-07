@@ -388,15 +388,15 @@ function Tablespaces() {
       sorter: (a: TablespaceInfo, b: TablespaceInfo) => a.spaceType.localeCompare(b.spaceType),
     },
     {
-      title: 'File Size',
+      title: 'Capacity',
       dataIndex: 'fileSize',
       key: 'fileSize',
       width: 100,
-      render: (size: number) => formatBytes(size),
+      render: (size: number) => size > 0 ? formatBytes(size) : <Tag>Unlimited</Tag>,
       sorter: (a: TablespaceInfo, b: TablespaceInfo) => a.fileSize - b.fileSize,
     },
     {
-      title: 'Allocated',
+      title: 'Used',
       dataIndex: 'allocatedSize',
       key: 'allocatedSize',
       width: 100,
@@ -408,9 +408,11 @@ function Tablespaces() {
       key: 'usage',
       width: 150,
       render: (_: unknown, record: TablespaceInfo) => {
-        const percent = record.fileSize > 0
-          ? parseFloat(((record.allocatedSize / record.fileSize) * 100).toFixed(2))
-          : 0
+        // PostgreSQL: fileSize=0 means unlimited (disk-based)
+        if (record.fileSize === 0) {
+          return <Tag color="blue">N/A</Tag>
+        }
+        const percent = parseFloat(((record.allocatedSize / record.fileSize) * 100).toFixed(2))
         // 사용량에 따른 색상: 90%+ 빨강, 70%+ 주황, 그 외 파랑
         const strokeColor = percent >= 90 ? '#ff4d4f' : percent >= 70 ? '#faad14' : '#5d87ff'
         return (
