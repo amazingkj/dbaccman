@@ -342,14 +342,19 @@ class PermissionServiceTest {
             every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
 
             every { mockDialect.formatGrantee("testuser", "localhost") } returns "'testuser'@'localhost'"
+            every { mockDialect.getGlobalPrivilegesQuery() } returns "SELECT * FROM global_privileges WHERE grantee = ?"
             every { mockDialect.getSchemaPrivilegesQuery() } returns "SELECT * FROM schema_privileges WHERE grantee = ?"
             every { mockDialect.getTablePrivilegesQuery() } returns "SELECT * FROM table_privileges WHERE grantee = ?"
 
             every { mockConnection.prepareStatement(any()) } returns mockPreparedStatement
             every { mockPreparedStatement.setString(1, any()) } just Runs
 
-            // Schema privileges result
+            // Global privileges result (empty), Schema privileges result, Table privileges result (empty)
             every { mockPreparedStatement.executeQuery() } returnsMany listOf(
+                mockk<ResultSet>().also { emptyRs ->
+                    every { emptyRs.next() } returns false
+                    every { emptyRs.close() } just Runs
+                },
                 mockResultSet,
                 mockk<ResultSet>().also { emptyRs ->
                     every { emptyRs.next() } returns false

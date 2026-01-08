@@ -154,10 +154,12 @@ function Permissions() {
   useEffect(() => {
     // 병렬로 모든 데이터 로드 (성능 최적화)
     const fetchAllData = async () => {
-      const [accountsResult, databasesResult, tablespacesResult] = await Promise.allSettled([
+      const isOracle = dbType?.toUpperCase() === 'ORACLE'
+
+      // Tablespaces are only needed for Oracle (user-level default tablespace feature)
+      const [accountsResult, databasesResult] = await Promise.allSettled([
         accountsApi.list(),
         tablesApi.getDatabases(),
-        tablespacesApi.list(),
       ])
 
       if (accountsResult.status === 'fulfilled') {
@@ -172,15 +174,21 @@ function Permissions() {
         setDatabases([])
       }
 
-      if (tablespacesResult.status === 'fulfilled') {
-        setTablespaces(tablespacesResult.value.data)
+      // Only fetch tablespaces for Oracle
+      if (isOracle) {
+        try {
+          const tablespacesRes = await tablespacesApi.list()
+          setTablespaces(tablespacesRes.data)
+        } catch {
+          setTablespaces([])
+        }
       } else {
         setTablespaces([])
       }
     }
 
     fetchAllData()
-  }, [])
+  }, [dbType])
 
   const fetchPermissions = async (userAtHost: string) => {
     setLoading(true)
@@ -442,17 +450,19 @@ function Permissions() {
               >
                 Grant Permission
               </Button>
-              <Button
-                icon={<DatabaseOutlined />}
-                onClick={() => {
-                  tablespaceForm.resetFields()
-                  setTablespaceModalOpen(true)
-                }}
-                disabled={!selectedAccount || tablespaces.length === 0}
-                title={tablespaces.length === 0 ? 'No tablespaces available' : 'Set default tablespace for this account'}
-              >
-                Set Tablespace
-              </Button>
+              {dbType?.toUpperCase() === 'ORACLE' && (
+                <Button
+                  icon={<DatabaseOutlined />}
+                  onClick={() => {
+                    tablespaceForm.resetFields()
+                    setTablespaceModalOpen(true)
+                  }}
+                  disabled={!selectedAccount || tablespaces.length === 0}
+                  title={tablespaces.length === 0 ? 'No tablespaces available' : 'Set default tablespace for this account'}
+                >
+                  Set Tablespace
+                </Button>
+              )}
               <Button
                 icon={<ReloadOutlined />}
                 onClick={() => selectedAccount && fetchPermissions(selectedAccount)}

@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/authStore'
 import { useConnectionStore } from '../store/connectionStore'
 import { authApi } from '../api/auth'
 import { resetSessionExpiredFlag } from '../api/client'
+import { apiCache } from '../utils/cache'
 import type { LoginRequest, ApiError } from '../types'
 import { DATABASE_TYPES } from '../types'
 
@@ -17,6 +18,9 @@ export function useAuth() {
     try {
       const response = await authApi.login(credentials)
       const data = response.data
+
+      // Clear all cached API responses before switching accounts
+      apiCache.clear()
 
       setAuth(data)
       resetSessionExpiredFlag()

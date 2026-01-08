@@ -1,7 +1,9 @@
 package com.dbaccman.service
 
 import com.dbaccman.config.useSessionConnectionWithDialect
+import com.dbaccman.dialect.MySQLDialect
 import com.dbaccman.dialect.OracleDialect
+import com.dbaccman.dialect.PostgreSQLDialect
 import com.dbaccman.model.*
 import com.dbaccman.util.AuditLogger
 import org.slf4j.LoggerFactory
@@ -10,15 +12,17 @@ class UserDataService {
     private val logger = LoggerFactory.getLogger(UserDataService::class.java)
 
     /**
-     * Get tables owned by the current user (USER_TABLES).
+     * Get tables owned by the current user.
      */
     fun getMyTables(sessionId: String): List<UserTable> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            if (dialect !is OracleDialect) {
-                throw UnsupportedOperationException("This feature is only available for Oracle databases")
+            val sql = when (dialect) {
+                is OracleDialect -> dialect.getMyTablesQuery()
+                is MySQLDialect -> dialect.getMyTablesQuery()
+                is PostgreSQLDialect -> dialect.getMyTablesQuery()
+                else -> throw UnsupportedOperationException("This feature is not available for this database type")
             }
 
-            val sql = dialect.getMyTablesQuery()
             conn.createStatement().use { stmt ->
                 stmt.executeQuery(sql).use { rs ->
                     val tables = mutableListOf<UserTable>()
@@ -42,23 +46,34 @@ class UserDataService {
     /**
      * Get columns for a table owned by the current user.
      */
-    fun getMyTableColumns(sessionId: String, table: String): List<ColumnInfo> {
+    fun getMyTableColumns(sessionId: String, schema: String?, table: String): List<ColumnInfo> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            if (dialect !is OracleDialect) {
-                throw UnsupportedOperationException("This feature is only available for Oracle databases")
+            val sql = when (dialect) {
+                is OracleDialect -> dialect.getMyTableColumnsQuery()
+                is MySQLDialect -> dialect.getMyTableColumnsQuery()
+                is PostgreSQLDialect -> dialect.getMyTableColumnsQuery()
+                else -> throw UnsupportedOperationException("This feature is not available for this database type")
             }
 
-            val sql = dialect.getMyTableColumnsQuery()
             conn.prepareStatement(sql).use { stmt ->
-                stmt.setString(1, table)
+                when (dialect) {
+                    is OracleDialect -> stmt.setString(1, table)
+                    is MySQLDialect -> stmt.setString(1, table)
+                    is PostgreSQLDialect -> {
+                        stmt.setString(1, schema ?: "public")
+                        stmt.setString(2, table)
+                    }
+                    else -> stmt.setString(1, table)
+                }
                 stmt.executeQuery().use { rs ->
                     val columns = mutableListOf<ColumnInfo>()
                     while (rs.next()) {
+                        val isNullable = rs.getString("is_nullable")
                         columns.add(
                             ColumnInfo(
                                 name = rs.getString("column_name") ?: "",
                                 type = rs.getString("data_type") ?: "",
-                                nullable = rs.getString("is_nullable") == "Y",
+                                nullable = isNullable == "Y" || isNullable == "YES",
                                 key = null,
                                 defaultValue = rs.getString("column_default"),
                                 extra = null
@@ -74,23 +89,39 @@ class UserDataService {
     /**
      * Get indexes for a table owned by the current user.
      */
-    fun getMyTableIndexes(sessionId: String, table: String): List<IndexInfo> {
+    fun getMyTableIndexes(sessionId: String, schema: String?, table: String): List<IndexInfo> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            if (dialect !is OracleDialect) {
-                throw UnsupportedOperationException("This feature is only available for Oracle databases")
+            val sql = when (dialect) {
+                is OracleDialect -> dialect.getMyTableIndexesQuery()
+                is MySQLDialect -> dialect.getMyTableIndexesQuery()
+                is PostgreSQLDialect -> dialect.getMyTableIndexesQuery()
+                else -> throw UnsupportedOperationException("This feature is not available for this database type")
             }
 
-            val sql = dialect.getMyTableIndexesQuery()
             conn.prepareStatement(sql).use { stmt ->
-                stmt.setString(1, table)
+                when (dialect) {
+                    is OracleDialect -> stmt.setString(1, table)
+                    is MySQLDialect -> stmt.setString(1, table)
+                    is PostgreSQLDialect -> {
+                        stmt.setString(1, schema ?: "public")
+                        stmt.setString(2, table)
+                    }
+                    else -> stmt.setString(1, table)
+                }
                 stmt.executeQuery().use { rs ->
                     val indexes = mutableListOf<IndexInfo>()
                     while (rs.next()) {
+                        val isUnique = rs.getObject("is_unique")
+                        val uniqueValue = when (isUnique) {
+                            is Boolean -> isUnique
+                            is Number -> isUnique.toInt() == 1
+                            else -> false
+                        }
                         indexes.add(
                             IndexInfo(
                                 name = rs.getString("index_name") ?: "",
                                 type = rs.getString("index_type") ?: "",
-                                unique = rs.getInt("is_unique") == 1,
+                                unique = uniqueValue,
                                 columns = (rs.getString("columns") ?: "").split(", ")
                             )
                         )
@@ -103,19 +134,24 @@ class UserDataService {
 
     /**
      * Get table data for a table owned by the current user.
-     * Only allows SELECT on USER_TABLES to prevent accessing other schemas.
+     * Only allows SELECT on tables the user owns to prevent accessing other schemas.
      */
-    fun getMyTableData(sessionId: String, table: String, limit: Int): Map<String, Any> {
+    fun getMyTableData(sessionId: String, schema: String?, table: String, limit: Int): Map<String, Any> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             // Validate table name to prevent SQL injection
             if (!table.matches(Regex("^[A-Za-z_][A-Za-z0-9_\$#]*$"))) {
                 throw IllegalArgumentException("Invalid table name")
             }
 
-            // Use USER_TABLES to verify the table exists in user's schema
-            val checkSql = "SELECT 1 FROM USER_TABLES WHERE TABLE_NAME = UPPER(?)"
+            // Verify the table exists and is owned by the current user
+            val checkSql = when (dialect) {
+                is OracleDialect -> "SELECT 1 FROM USER_TABLES WHERE TABLE_NAME = UPPER(?)"
+                is MySQLDialect -> "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ?"
+                is PostgreSQLDialect -> "SELECT 1 FROM pg_tables WHERE tableowner = CURRENT_USER AND tablename = ?"
+                else -> throw UnsupportedOperationException("This feature is not available for this database type")
+            }
             val tableExists = conn.prepareStatement(checkSql).use { stmt ->
-                stmt.setString(1, table)
+                stmt.setString(1, if (dialect is OracleDialect) table else table.lowercase())
                 stmt.executeQuery().use { rs -> rs.next() }
             }
 
@@ -123,7 +159,18 @@ class UserDataService {
                 throw IllegalArgumentException("Table '$table' not found in your schema")
             }
 
-            val sql = dialect.getSelectWithLimitSql(dialect.quoteIdentifier(table.uppercase()), limit.coerceIn(1, 1000))
+            // Build qualified table name
+            val quotedTable = when (dialect) {
+                is OracleDialect -> dialect.quoteIdentifier(table.uppercase())
+                is MySQLDialect -> dialect.quoteIdentifier(table)
+                is PostgreSQLDialect -> {
+                    val schemaName = schema ?: "public"
+                    "${dialect.quoteIdentifier(schemaName)}.${dialect.quoteIdentifier(table)}"
+                }
+                else -> dialect.quoteIdentifier(table)
+            }
+
+            val sql = dialect.getSelectWithLimitSql(quotedTable, limit.coerceIn(1, 1000))
             conn.createStatement().use { stmt ->
                 stmt.executeQuery(sql).use { rs ->
                     val metaData = rs.metaData
@@ -154,15 +201,18 @@ class UserDataService {
 
     /**
      * Get tablespace quotas for the current user.
+     * Note: MySQL and PostgreSQL don't have per-user tablespace quotas like Oracle.
      */
     fun getMyTablespaces(sessionId: String): UserTablespaceInfo {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
-            if (dialect !is OracleDialect) {
-                throw UnsupportedOperationException("This feature is only available for Oracle databases")
+            val quotaSql = when (dialect) {
+                is OracleDialect -> dialect.getMyTablespacesQuery()
+                is MySQLDialect -> dialect.getMyTablespacesQuery()
+                is PostgreSQLDialect -> dialect.getMyTablespacesQuery()
+                else -> throw UnsupportedOperationException("This feature is not available for this database type")
             }
 
-            // Get tablespace quotas
-            val quotaSql = dialect.getMyTablespacesQuery()
+            // Get tablespace quotas (empty for MySQL/PostgreSQL)
             val quotas = conn.createStatement().use { stmt ->
                 stmt.executeQuery(quotaSql).use { rs ->
                     val list = mutableListOf<UserTablespace>()
@@ -180,7 +230,12 @@ class UserDataService {
             }
 
             // Get default tablespace
-            val defaultSql = dialect.getMyDefaultTablespaceQuery()
+            val defaultSql = when (dialect) {
+                is OracleDialect -> dialect.getMyDefaultTablespaceQuery()
+                is MySQLDialect -> dialect.getMyDefaultTablespaceQuery()
+                is PostgreSQLDialect -> dialect.getMyDefaultTablespaceQuery()
+                else -> throw UnsupportedOperationException("This feature is not available for this database type")
+            }
             val (defaultTs, tempTs) = conn.createStatement().use { stmt ->
                 stmt.executeQuery(defaultSql).use { rs ->
                     if (rs.next()) {

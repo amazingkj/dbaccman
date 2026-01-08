@@ -36,7 +36,8 @@ fun Route.userRoutes() {
                     val sessionId = call.getSessionId()
                     val table = call.parameters["table"]
                         ?: throw IllegalArgumentException("Table not specified")
-                    val columns = userDataService.getMyTableColumns(sessionId, table)
+                    val schema = call.request.queryParameters["schema"]
+                    val columns = userDataService.getMyTableColumns(sessionId, schema, table)
                     call.respond(columns)
                 }
             }
@@ -47,7 +48,8 @@ fun Route.userRoutes() {
                     val sessionId = call.getSessionId()
                     val table = call.parameters["table"]
                         ?: throw IllegalArgumentException("Table not specified")
-                    val indexes = userDataService.getMyTableIndexes(sessionId, table)
+                    val schema = call.request.queryParameters["schema"]
+                    val indexes = userDataService.getMyTableIndexes(sessionId, schema, table)
                     call.respond(indexes)
                 }
             }
@@ -58,8 +60,9 @@ fun Route.userRoutes() {
                     val sessionId = call.getSessionId()
                     val table = call.parameters["table"]
                         ?: throw IllegalArgumentException("Table not specified")
+                    val schema = call.request.queryParameters["schema"]
                     val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
-                    val data = userDataService.getMyTableData(sessionId, table, limit)
+                    val data = userDataService.getMyTableData(sessionId, schema, table, limit)
                     call.respond(data)
                 }
             }

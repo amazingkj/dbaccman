@@ -485,11 +485,13 @@ class PostgreSQLDialectTest {
     }
 
     @Test
-    @DisplayName("Schema privileges query should use information_schema")
+    @DisplayName("Schema privileges query should use has_schema_privilege")
     fun testSchemaPrivilegesQuery() {
         val query = dialect.getSchemaPrivilegesQuery()
-        assertTrue(query.contains("information_schema.table_privileges"))
-        assertTrue(query.contains("grantee = ?"))
+        assertTrue(query.contains("pg_namespace"))
+        assertTrue(query.contains("has_schema_privilege"))
+        assertTrue(query.contains("USAGE"))
+        assertTrue(query.contains("CREATE"))
     }
 
     @Test

@@ -1,11 +1,13 @@
 package com.dbaccman.service
 
 import com.dbaccman.config.useSessionConnectionWithDialect
+import com.dbaccman.dialect.PostgreSQLDialect
 import com.dbaccman.model.TablespaceInfo
 import com.dbaccman.model.CreateTablespaceRequest
 import com.dbaccman.model.TableLocationRequest
 import com.dbaccman.model.TableInfo
 import com.dbaccman.util.AuditLogger
+import java.sql.SQLException
 
 class TablespaceService {
 
@@ -37,8 +39,23 @@ class TablespaceService {
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getCreateTablespaceSql(request.name, request.dataFile, request.engine)
 
-            conn.createStatement().use { stmt ->
-                stmt.execute(sql)
+            try {
+                conn.createStatement().use { stmt ->
+                    stmt.execute(sql)
+                }
+            } catch (e: SQLException) {
+                // PostgreSQL: directory does not exist error
+                if (dialect is PostgreSQLDialect && e.message?.contains("does not exist") == true) {
+                    val location = request.dataFile ?: "/var/lib/postgresql/data/${request.name.lowercase()}"
+                    throw SQLException(
+                        "Directory '$location' does not exist on the PostgreSQL server. " +
+                        "PostgreSQL requires the directory to exist and be owned by the postgres OS user before creating a tablespace. " +
+                        "Please create the directory on the server first, then try again.",
+                        e.sqlState,
+                        0
+                    )
+                }
+                throw e
             }
 
             AuditLogger.log("CREATE_TABLESPACE", "Created tablespace ${request.name}")

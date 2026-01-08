@@ -17,6 +17,7 @@ import {
   Select,
   Progress,
   Tooltip,
+  Alert,
 } from 'antd'
 import {
   PlusOutlined,
@@ -30,6 +31,7 @@ import {
 } from '@ant-design/icons'
 import { tablespacesApi } from '../api/tablespaces'
 import { tablesApi } from '../api/tables'
+import { useAuthStore } from '../store/authStore'
 import type { TablespaceInfo, CreateTablespaceRequest, TableInfo, DatabaseInfo } from '../types'
 
 const { Title, Text } = Typography
@@ -132,6 +134,8 @@ function formatBytes(bytes: number): string {
 function Tablespaces() {
   const [searchParams] = useSearchParams()
   const sortByUsage = searchParams.get('sort') === 'usage'
+  const { user } = useAuthStore()
+  const dbType = user?.dbType?.toUpperCase()
 
   const [tablespaces, setTablespaces] = useState<TablespaceInfo[]>([])
   const [selectedTablespace, setSelectedTablespace] = useState<TablespaceInfo | null>(null)
@@ -669,6 +673,24 @@ function Tablespaces() {
         }}
         footer={null}
       >
+        {dbType === 'POSTGRESQL' && (
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="PostgreSQL Requirement"
+            description={
+              <div>
+                <p style={{ margin: 0 }}>
+                  PostgreSQL requires the directory to <strong>exist on the server</strong> before creating a tablespace.
+                </p>
+                <p style={{ margin: '8px 0 0 0', fontSize: 12, color: '#666' }}>
+                  Run on server: <code>sudo mkdir -p /path/to/dir && sudo chown postgres:postgres /path/to/dir</code>
+                </p>
+              </div>
+            }
+          />
+        )}
         <Form form={form} layout="vertical" onFinish={handleCreate}>
           <Form.Item
             name="name"
@@ -682,10 +704,14 @@ function Tablespaces() {
           </Form.Item>
           <Form.Item
             name="dataFile"
-            label="Data File (optional)"
-            help="Leave empty to use default: {name}.ibd"
+            label={dbType === 'POSTGRESQL' ? 'Directory Location' : 'Data File (optional)'}
+            help={dbType === 'POSTGRESQL'
+              ? 'Full path to an existing directory on the server (e.g., /var/lib/postgresql/tablespaces/myts)'
+              : 'Leave empty to use default: {name}.ibd'
+            }
+            rules={dbType === 'POSTGRESQL' ? [{ required: true, message: 'Directory path is required for PostgreSQL' }] : []}
           >
-            <Input placeholder="e.g., ts_data.ibd" />
+            <Input placeholder={dbType === 'POSTGRESQL' ? '/var/lib/postgresql/tablespaces/myts' : 'e.g., ts_data.ibd'} />
           </Form.Item>
           <Form.Item>
             <Space>

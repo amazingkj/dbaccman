@@ -36,7 +36,7 @@ class MySQLDialect : DatabaseDialect {
         SELECT
             id as pid,
             user as sess_user,
-            host,
+            SUBSTRING_INDEX(host, ':', 1) as host,
             db as database_name,
             command,
             time,
@@ -61,7 +61,7 @@ class MySQLDialect : DatabaseDialect {
         SELECT
             id as pid,
             user as sess_user,
-            host,
+            SUBSTRING_INDEX(host, ':', 1) as host,
             db as database_name,
             command,
             time,
@@ -245,6 +245,157 @@ class MySQLDialect : DatabaseDialect {
             PRIVILEGE_TYPE as privilege,
             IS_GRANTABLE as is_grantable
         FROM information_schema.TABLE_PRIVILEGES
+    """.trimIndent()
+
+    /**
+     * Get global privileges for a specific user from mysql.user table.
+     * MySQL stores global privileges as Y/N columns, so we need to unpivot them.
+     */
+    fun getGlobalPrivilegesQuery(): String = """
+        SELECT
+            CONCAT("'", user, "'@'", host, "'") as grantee,
+            '*' as db,
+            privilege,
+            CASE WHEN Grant_priv = 'Y' THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM mysql.user
+        CROSS JOIN (
+            SELECT 'SELECT' as privilege UNION ALL
+            SELECT 'INSERT' UNION ALL
+            SELECT 'UPDATE' UNION ALL
+            SELECT 'DELETE' UNION ALL
+            SELECT 'CREATE' UNION ALL
+            SELECT 'DROP' UNION ALL
+            SELECT 'RELOAD' UNION ALL
+            SELECT 'SHUTDOWN' UNION ALL
+            SELECT 'PROCESS' UNION ALL
+            SELECT 'FILE' UNION ALL
+            SELECT 'REFERENCES' UNION ALL
+            SELECT 'INDEX' UNION ALL
+            SELECT 'ALTER' UNION ALL
+            SELECT 'SHOW DATABASES' UNION ALL
+            SELECT 'SUPER' UNION ALL
+            SELECT 'CREATE TEMPORARY TABLES' UNION ALL
+            SELECT 'LOCK TABLES' UNION ALL
+            SELECT 'EXECUTE' UNION ALL
+            SELECT 'REPLICATION SLAVE' UNION ALL
+            SELECT 'REPLICATION CLIENT' UNION ALL
+            SELECT 'CREATE VIEW' UNION ALL
+            SELECT 'SHOW VIEW' UNION ALL
+            SELECT 'CREATE ROUTINE' UNION ALL
+            SELECT 'ALTER ROUTINE' UNION ALL
+            SELECT 'CREATE USER' UNION ALL
+            SELECT 'EVENT' UNION ALL
+            SELECT 'TRIGGER' UNION ALL
+            SELECT 'CREATE TABLESPACE'
+        ) privs
+        WHERE CONCAT("'", user, "'@'", host, "'") = ?
+        AND CASE privilege
+            WHEN 'SELECT' THEN Select_priv
+            WHEN 'INSERT' THEN Insert_priv
+            WHEN 'UPDATE' THEN Update_priv
+            WHEN 'DELETE' THEN Delete_priv
+            WHEN 'CREATE' THEN Create_priv
+            WHEN 'DROP' THEN Drop_priv
+            WHEN 'RELOAD' THEN Reload_priv
+            WHEN 'SHUTDOWN' THEN Shutdown_priv
+            WHEN 'PROCESS' THEN Process_priv
+            WHEN 'FILE' THEN File_priv
+            WHEN 'REFERENCES' THEN References_priv
+            WHEN 'INDEX' THEN Index_priv
+            WHEN 'ALTER' THEN Alter_priv
+            WHEN 'SHOW DATABASES' THEN Show_db_priv
+            WHEN 'SUPER' THEN Super_priv
+            WHEN 'CREATE TEMPORARY TABLES' THEN Create_tmp_table_priv
+            WHEN 'LOCK TABLES' THEN Lock_tables_priv
+            WHEN 'EXECUTE' THEN Execute_priv
+            WHEN 'REPLICATION SLAVE' THEN Repl_slave_priv
+            WHEN 'REPLICATION CLIENT' THEN Repl_client_priv
+            WHEN 'CREATE VIEW' THEN Create_view_priv
+            WHEN 'SHOW VIEW' THEN Show_view_priv
+            WHEN 'CREATE ROUTINE' THEN Create_routine_priv
+            WHEN 'ALTER ROUTINE' THEN Alter_routine_priv
+            WHEN 'CREATE USER' THEN Create_user_priv
+            WHEN 'EVENT' THEN Event_priv
+            WHEN 'TRIGGER' THEN Trigger_priv
+            WHEN 'CREATE TABLESPACE' THEN Create_tablespace_priv
+            ELSE 'N'
+        END = 'Y'
+        ORDER BY privilege
+    """.trimIndent()
+
+    /**
+     * Get all global privileges for all users from mysql.user table.
+     */
+    fun getAllGlobalPrivilegesQuery(): String = """
+        SELECT
+            CONCAT("'", user, "'@'", host, "'") as grantee,
+            '*' as db,
+            privilege,
+            CASE WHEN Grant_priv = 'Y' THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM mysql.user
+        CROSS JOIN (
+            SELECT 'SELECT' as privilege UNION ALL
+            SELECT 'INSERT' UNION ALL
+            SELECT 'UPDATE' UNION ALL
+            SELECT 'DELETE' UNION ALL
+            SELECT 'CREATE' UNION ALL
+            SELECT 'DROP' UNION ALL
+            SELECT 'RELOAD' UNION ALL
+            SELECT 'SHUTDOWN' UNION ALL
+            SELECT 'PROCESS' UNION ALL
+            SELECT 'FILE' UNION ALL
+            SELECT 'REFERENCES' UNION ALL
+            SELECT 'INDEX' UNION ALL
+            SELECT 'ALTER' UNION ALL
+            SELECT 'SHOW DATABASES' UNION ALL
+            SELECT 'SUPER' UNION ALL
+            SELECT 'CREATE TEMPORARY TABLES' UNION ALL
+            SELECT 'LOCK TABLES' UNION ALL
+            SELECT 'EXECUTE' UNION ALL
+            SELECT 'REPLICATION SLAVE' UNION ALL
+            SELECT 'REPLICATION CLIENT' UNION ALL
+            SELECT 'CREATE VIEW' UNION ALL
+            SELECT 'SHOW VIEW' UNION ALL
+            SELECT 'CREATE ROUTINE' UNION ALL
+            SELECT 'ALTER ROUTINE' UNION ALL
+            SELECT 'CREATE USER' UNION ALL
+            SELECT 'EVENT' UNION ALL
+            SELECT 'TRIGGER' UNION ALL
+            SELECT 'CREATE TABLESPACE'
+        ) privs
+        WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        AND CASE privilege
+            WHEN 'SELECT' THEN Select_priv
+            WHEN 'INSERT' THEN Insert_priv
+            WHEN 'UPDATE' THEN Update_priv
+            WHEN 'DELETE' THEN Delete_priv
+            WHEN 'CREATE' THEN Create_priv
+            WHEN 'DROP' THEN Drop_priv
+            WHEN 'RELOAD' THEN Reload_priv
+            WHEN 'SHUTDOWN' THEN Shutdown_priv
+            WHEN 'PROCESS' THEN Process_priv
+            WHEN 'FILE' THEN File_priv
+            WHEN 'REFERENCES' THEN References_priv
+            WHEN 'INDEX' THEN Index_priv
+            WHEN 'ALTER' THEN Alter_priv
+            WHEN 'SHOW DATABASES' THEN Show_db_priv
+            WHEN 'SUPER' THEN Super_priv
+            WHEN 'CREATE TEMPORARY TABLES' THEN Create_tmp_table_priv
+            WHEN 'LOCK TABLES' THEN Lock_tables_priv
+            WHEN 'EXECUTE' THEN Execute_priv
+            WHEN 'REPLICATION SLAVE' THEN Repl_slave_priv
+            WHEN 'REPLICATION CLIENT' THEN Repl_client_priv
+            WHEN 'CREATE VIEW' THEN Create_view_priv
+            WHEN 'SHOW VIEW' THEN Show_view_priv
+            WHEN 'CREATE ROUTINE' THEN Create_routine_priv
+            WHEN 'ALTER ROUTINE' THEN Alter_routine_priv
+            WHEN 'CREATE USER' THEN Create_user_priv
+            WHEN 'EVENT' THEN Event_priv
+            WHEN 'TRIGGER' THEN Trigger_priv
+            WHEN 'CREATE TABLESPACE' THEN Create_tablespace_priv
+            ELSE 'N'
+        END = 'Y'
+        ORDER BY grantee, privilege
     """.trimIndent()
 
     override fun getGrantSql(privileges: List<String>, database: String, table: String, username: String, host: String): String {
@@ -467,5 +618,77 @@ class MySQLDialect : DatabaseDialect {
         FROM information_schema.SCHEMATA
         WHERE SCHEMA_NAME NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
         ORDER BY SCHEMA_NAME
+    """.trimIndent()
+
+    // ==================== User-specific Queries (for non-admin users) ====================
+
+    /**
+     * Get tables in the current database (user's default schema).
+     */
+    fun getMyTablesQuery(): String = """
+        SELECT
+            DATABASE() as schema_name,
+            table_name,
+            IFNULL(table_rows, 0) as row_count,
+            DATE_FORMAT(create_time, '%Y-%m-%d %H:%i:%s') as last_analyzed,
+            '' as tablespace_name
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+        AND table_type = 'BASE TABLE'
+        ORDER BY table_name
+    """.trimIndent()
+
+    /**
+     * Get columns for a table in the current database.
+     */
+    fun getMyTableColumnsQuery(): String = """
+        SELECT
+            column_name,
+            column_type as data_type,
+            is_nullable,
+            ordinal_position,
+            column_default
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+        AND table_name = ?
+        ORDER BY ordinal_position
+    """.trimIndent()
+
+    /**
+     * Get indexes for a table in the current database.
+     */
+    fun getMyTableIndexesQuery(): String = """
+        SELECT
+            index_name,
+            index_type,
+            NOT non_unique as is_unique,
+            GROUP_CONCAT(column_name ORDER BY seq_in_index) as columns
+        FROM information_schema.statistics
+        WHERE table_schema = DATABASE()
+        AND table_name = ?
+        GROUP BY index_name, index_type, non_unique
+        ORDER BY index_name
+    """.trimIndent()
+
+    /**
+     * MySQL doesn't have per-user tablespace quotas like Oracle.
+     * Instead, show the user's storage usage in the current database.
+     */
+    fun getMyTablespacesQuery(): String = """
+        SELECT
+            DATABASE() as name,
+            'UNLIMITED' as max_bytes,
+            COALESCE(SUM(data_length + index_length), 0) as used_bytes
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+        AND table_type = 'BASE TABLE'
+    """.trimIndent()
+
+    /**
+     * MySQL doesn't have user-level default tablespace.
+     * Returns current database as schema.
+     */
+    fun getMyDefaultTablespaceQuery(): String = """
+        SELECT DATABASE() as DEFAULT_TABLESPACE, NULL as TEMPORARY_TABLESPACE
     """.trimIndent()
 }

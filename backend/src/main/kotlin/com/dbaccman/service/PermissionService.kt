@@ -1,6 +1,8 @@
 package com.dbaccman.service
 
 import com.dbaccman.config.useSessionConnectionWithDialect
+import com.dbaccman.dialect.MySQLDialect
+import com.dbaccman.dialect.PostgreSQLDialect
 import com.dbaccman.model.GrantPermissionRequest
 import com.dbaccman.model.Permission
 import com.dbaccman.model.RevokePermissionRequest
@@ -13,10 +15,35 @@ class PermissionService {
             val permissions = mutableListOf<Permission>()
             val grantee = dialect.formatGrantee(username, host)
 
+            // Global privileges (MySQL only - stored in mysql.user table)
+            if (dialect is MySQLDialect) {
+                val globalSql = dialect.getGlobalPrivilegesQuery()
+                conn.prepareStatement(globalSql).use { stmt ->
+                    stmt.setString(1, grantee)
+                    stmt.executeQuery().use { rs ->
+                        while (rs.next()) {
+                            permissions.add(
+                                Permission(
+                                    grantee = rs.getString("grantee"),
+                                    database = "*",
+                                    table = "*",
+                                    privilege = rs.getString("privilege"),
+                                    isGrantable = rs.getString("is_grantable") == "YES"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
             // Schema-level privileges
             val schemaSql = dialect.getSchemaPrivilegesQuery()
             conn.prepareStatement(schemaSql).use { stmt ->
                 stmt.setString(1, grantee)
+                // PostgreSQL uses has_schema_privilege() which needs the username as second parameter
+                if (dialect is PostgreSQLDialect) {
+                    stmt.setString(2, grantee)
+                }
                 stmt.executeQuery().use { rs ->
                     while (rs.next()) {
                         permissions.add(
@@ -63,6 +90,26 @@ class PermissionService {
     fun getAllUsersPermissions(sessionId: String): Map<String, List<Permission>> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val permissionsByUser = mutableMapOf<String, MutableList<Permission>>()
+
+            // Global privileges (MySQL only - stored in mysql.user table)
+            if (dialect is MySQLDialect) {
+                val globalSql = dialect.getAllGlobalPrivilegesQuery()
+                conn.createStatement().use { stmt ->
+                    stmt.executeQuery(globalSql).use { rs ->
+                        while (rs.next()) {
+                            val grantee = rs.getString("grantee")
+                            val permission = Permission(
+                                grantee = grantee,
+                                database = "*",
+                                table = "*",
+                                privilege = rs.getString("privilege"),
+                                isGrantable = rs.getString("is_grantable") == "YES"
+                            )
+                            permissionsByUser.getOrPut(grantee) { mutableListOf() }.add(permission)
+                        }
+                    }
+                }
+            }
 
             // Schema-level privileges (all users)
             val schemaSql = dialect.getAllSchemaPrivilegesQuery()

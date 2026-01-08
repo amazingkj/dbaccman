@@ -202,13 +202,15 @@ class PostgreSQLDialect : DatabaseDialect {
     }
 
     override fun getSchemaPrivilegesQuery(): String = """
-        SELECT
-            grantee as grantee,
-            table_schema as db,
-            privilege_type as privilege,
-            is_grantable as is_grantable
-        FROM information_schema.table_privileges
-        WHERE grantee = ?
+        SELECT DISTINCT
+            ? as grantee,
+            n.nspname as db,
+            priv.privilege as privilege,
+            'NO' as is_grantable
+        FROM pg_namespace n
+        CROSS JOIN (VALUES ('USAGE'), ('CREATE')) AS priv(privilege)
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+        AND has_schema_privilege(?, n.nspname, priv.privilege)
     """.trimIndent()
 
     override fun getTablePrivilegesQuery(): String = """
@@ -223,13 +225,17 @@ class PostgreSQLDialect : DatabaseDialect {
     """.trimIndent()
 
     override fun getAllSchemaPrivilegesQuery(): String = """
-        SELECT
-            grantee as grantee,
-            table_schema as db,
-            privilege_type as privilege,
-            is_grantable as is_grantable
-        FROM information_schema.table_privileges
-        WHERE grantee NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        SELECT DISTINCT
+            a.grantee::regrole::text as grantee,
+            n.nspname as db,
+            a.privilege_type as privilege,
+            CASE WHEN a.is_grantable THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM pg_namespace n,
+             aclexplode(n.nspacl) as a
+        WHERE n.nspname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+        AND a.grantee IS NOT NULL
+        AND a.grantee != 0
+        AND a.grantee::regrole::text NOT IN (${getSystemUsers().joinToString { "'$it'" }})
     """.trimIndent()
 
     override fun getAllTablePrivilegesQuery(): String = """
@@ -503,5 +509,91 @@ class PostgreSQLDialect : DatabaseDialect {
         FROM information_schema.schemata
         WHERE schema_name NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
         ORDER BY schema_name
+    """.trimIndent()
+
+    // ==================== User-specific Queries (for non-admin users) ====================
+
+    /**
+     * Get tables owned by the current user.
+     */
+    fun getMyTablesQuery(): String = """
+        SELECT
+            schemaname as schema_name,
+            tablename as table_name,
+            COALESCE(GREATEST(c.reltuples, 0)::bigint, 0) as row_count,
+            '' as last_analyzed,
+            COALESCE(t.spcname, 'pg_default') as tablespace_name
+        FROM pg_tables pt
+        LEFT JOIN pg_namespace n ON n.nspname = pt.schemaname
+        LEFT JOIN pg_class c ON c.relname = pt.tablename AND c.relnamespace = n.oid
+        LEFT JOIN pg_tablespace t ON c.reltablespace = t.oid
+        WHERE pt.tableowner = CURRENT_USER
+        AND pt.schemaname NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
+        ORDER BY pt.schemaname, pt.tablename
+    """.trimIndent()
+
+    /**
+     * Get columns for a table owned by the current user.
+     */
+    fun getMyTableColumnsQuery(): String = """
+        SELECT
+            c.column_name,
+            c.data_type,
+            c.is_nullable,
+            c.ordinal_position,
+            c.column_default
+        FROM information_schema.columns c
+        JOIN pg_tables pt ON c.table_schema = pt.schemaname AND c.table_name = pt.tablename
+        WHERE pt.tableowner = CURRENT_USER
+        AND c.table_schema = ?
+        AND c.table_name = ?
+        ORDER BY c.ordinal_position
+    """.trimIndent()
+
+    /**
+     * Get indexes for a table owned by the current user.
+     */
+    fun getMyTableIndexesQuery(): String = """
+        SELECT
+            i.indexname as index_name,
+            am.amname as index_type,
+            ix.indisunique as is_unique,
+            string_agg(a.attname, ', ' ORDER BY array_position(ix.indkey, a.attnum)) as columns
+        FROM pg_indexes i
+        JOIN pg_tables pt ON i.schemaname = pt.schemaname AND i.tablename = pt.tablename
+        JOIN pg_class c ON c.relname = i.indexname
+        JOIN pg_index ix ON ix.indexrelid = c.oid
+        JOIN pg_class t ON t.oid = ix.indrelid
+        JOIN pg_am am ON c.relam = am.oid
+        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+        WHERE pt.tableowner = CURRENT_USER
+        AND i.schemaname = ?
+        AND i.tablename = ?
+        GROUP BY i.indexname, am.amname, ix.indisunique
+        ORDER BY i.indexname
+    """.trimIndent()
+
+    /**
+     * PostgreSQL doesn't have per-user tablespace quotas like Oracle.
+     * Instead, show the user's storage usage by schema for tables they own.
+     */
+    fun getMyTablespacesQuery(): String = """
+        SELECT
+            pt.schemaname as name,
+            'UNLIMITED' as max_bytes,
+            COALESCE(SUM(pg_total_relation_size(quote_ident(pt.schemaname) || '.' || quote_ident(pt.tablename))), 0)::bigint as used_bytes
+        FROM pg_tables pt
+        WHERE pt.tableowner = CURRENT_USER
+        AND pt.schemaname NOT IN ('pg_catalog', 'information_schema', 'pg_toast')
+        GROUP BY pt.schemaname
+        ORDER BY pt.schemaname
+    """.trimIndent()
+
+    /**
+     * PostgreSQL doesn't have user-level default tablespace.
+     * Returns current schema as default.
+     */
+    fun getMyDefaultTablespaceQuery(): String = """
+        SELECT current_schema() as DEFAULT_TABLESPACE, NULL as TEMPORARY_TABLESPACE
     """.trimIndent()
 }

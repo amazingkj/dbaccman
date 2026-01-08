@@ -8,7 +8,7 @@ export const ORACLE_SYSTEM_PRIVILEGES = [
   { value: 'UNLIMITED TABLESPACE', label: 'UNLIMITED TABLESPACE', description: 'Use unlimited storage' },
 ]
 
-// MySQL global privileges for account creation
+// MySQL global privileges for account creation (basic)
 export const MYSQL_GLOBAL_PRIVILEGES = [
   { value: 'SELECT', label: 'SELECT', description: 'Read data from tables' },
   { value: 'INSERT', label: 'INSERT', description: 'Insert data into tables' },
@@ -18,6 +18,38 @@ export const MYSQL_GLOBAL_PRIVILEGES = [
   { value: 'DROP', label: 'DROP', description: 'Drop databases and tables' },
   { value: 'INDEX', label: 'INDEX', description: 'Create and drop indexes' },
   { value: 'ALTER', label: 'ALTER', description: 'Alter table structure' },
+]
+
+// MySQL all global privileges (for Permissions page - full list)
+export const MYSQL_ALL_GLOBAL_PRIVILEGES = [
+  'SELECT',
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'CREATE',
+  'DROP',
+  'RELOAD',
+  'SHUTDOWN',
+  'PROCESS',
+  'FILE',
+  'REFERENCES',
+  'INDEX',
+  'ALTER',
+  'SHOW DATABASES',
+  'SUPER',
+  'CREATE TEMPORARY TABLES',
+  'LOCK TABLES',
+  'EXECUTE',
+  'REPLICATION SLAVE',
+  'REPLICATION CLIENT',
+  'CREATE VIEW',
+  'SHOW VIEW',
+  'CREATE ROUTINE',
+  'ALTER ROUTINE',
+  'CREATE USER',
+  'EVENT',
+  'TRIGGER',
+  'CREATE TABLESPACE',
 ]
 
 // PostgreSQL privileges for account creation
@@ -118,11 +150,13 @@ export function getObjectPrivilegesForDbType(dbType: string | undefined): string
   }
 }
 
-// Get system privileges for grant modal (for Permissions page)
+// Get system/global privileges for grant modal (for Permissions page)
 export function getSystemPrivilegesForDbType(dbType: string | undefined): string[] {
   switch (dbType?.toUpperCase()) {
     case 'ORACLE':
       return ORACLE_SYSTEM_PRIVILEGES.map(p => p.value)
+    case 'MYSQL':
+      return MYSQL_ALL_GLOBAL_PRIVILEGES
     default:
       return []
   }
