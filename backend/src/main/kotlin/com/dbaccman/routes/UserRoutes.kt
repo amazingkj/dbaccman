@@ -8,6 +8,7 @@ import io.ktor.server.auth.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import kotlinx.serialization.Serializable
 import org.slf4j.LoggerFactory
 
 private val logger = LoggerFactory.getLogger("UserRoutes")
@@ -76,6 +77,16 @@ fun Route.userRoutes() {
                 }
             }
 
+            // Get tables in a specific tablespace
+            get("/tablespaces/{name}/tables") {
+                call.handleAuthenticatedRoute(logger, "Failed to fetch tables in tablespace") {
+                    val sessionId = call.getSessionId()
+                    val name = call.parameters["name"] ?: throw IllegalArgumentException("Tablespace name required")
+                    val tables = userDataService.getMyTablesInTablespace(sessionId, name)
+                    call.respond(tables)
+                }
+            }
+
             // Execute query (restricted to own schema)
             post("/query") {
                 call.handleAuthenticatedRoute(logger, "Failed to execute query") {
@@ -89,6 +100,7 @@ fun Route.userRoutes() {
     }
 }
 
+@Serializable
 data class UserQueryRequest(
     val query: String,
     val limit: Int? = 1000

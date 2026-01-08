@@ -514,7 +514,8 @@ class PostgreSQLDialect : DatabaseDialect {
     // ==================== User-specific Queries (for non-admin users) ====================
 
     /**
-     * Get tables owned by the current user.
+     * Get tables accessible to the current user.
+     * Shows tables the user owns OR tables in their current schema OR tables they have SELECT privilege on.
      */
     fun getMyTablesQuery(): String = """
         SELECT
@@ -527,8 +528,12 @@ class PostgreSQLDialect : DatabaseDialect {
         LEFT JOIN pg_namespace n ON n.nspname = pt.schemaname
         LEFT JOIN pg_class c ON c.relname = pt.tablename AND c.relnamespace = n.oid
         LEFT JOIN pg_tablespace t ON c.reltablespace = t.oid
-        WHERE pt.tableowner = CURRENT_USER
-        AND pt.schemaname NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
+        WHERE pt.schemaname NOT IN (${getSystemSchemas().joinToString { "'$it'" }})
+        AND (
+            pt.tableowner = CURRENT_USER
+            OR pt.schemaname = current_schema()
+            OR has_table_privilege(quote_ident(pt.schemaname) || '.' || quote_ident(pt.tablename), 'SELECT')
+        )
         ORDER BY pt.schemaname, pt.tablename
     """.trimIndent()
 
@@ -595,5 +600,24 @@ class PostgreSQLDialect : DatabaseDialect {
      */
     fun getMyDefaultTablespaceQuery(): String = """
         SELECT current_schema() as DEFAULT_TABLESPACE, NULL as TEMPORARY_TABLESPACE
+    """.trimIndent()
+
+    /**
+     * PostgreSQL: Get tables in a schema owned by the current user.
+     */
+    fun getMyTablesInTablespaceQuery(): String = """
+        SELECT
+            pt.schemaname as db_name,
+            pt.tablename as table_name,
+            'PostgreSQL' as engine,
+            COALESCE(GREATEST(c.reltuples, 0)::bigint, 0) as "rows",
+            COALESCE(pg_total_relation_size(quote_ident(pt.schemaname) || '.' || quote_ident(pt.tablename)), 0) as "size",
+            '' as create_time
+        FROM pg_tables pt
+        LEFT JOIN pg_namespace n ON n.nspname = pt.schemaname
+        LEFT JOIN pg_class c ON c.relname = pt.tablename AND c.relnamespace = n.oid
+        WHERE pt.schemaname = ?
+        AND pt.tableowner = CURRENT_USER
+        ORDER BY pt.tablename
     """.trimIndent()
 }

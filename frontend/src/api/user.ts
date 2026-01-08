@@ -43,6 +43,14 @@ export interface IndexInfo {
   columns: string[]
 }
 
+export interface TablespaceTableInfo {
+  name: string
+  engine: string | null
+  rows: number
+  size: number
+  createTime: string | null
+}
+
 export const userApi = {
   // Get tables owned by the current user
   getTables: () =>
@@ -65,6 +73,10 @@ export const userApi = {
   // Get tablespace quotas
   getTablespaces: () =>
     apiClient.get<UserTablespaceInfo>('/user/tablespaces'),
+
+  // Get tables in a specific tablespace
+  getTablesInTablespace: (tablespaceName: string) =>
+    apiClient.get<TablespaceTableInfo[]>(`/user/tablespaces/${encodeURIComponent(tablespaceName)}/tables`),
 
   // Execute query (restricted to own schema)
   executeQuery: (query: string, limit: number = 1000) =>

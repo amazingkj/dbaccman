@@ -995,14 +995,33 @@ class OracleDialect : DatabaseDialect {
 
     /**
      * Returns tablespace quotas for the current user.
+     * Includes: explicit quotas, default tablespace, and temporary tablespace.
      */
     fun getMyTablespacesQuery(): String = """
-        SELECT
-            TABLESPACE_NAME as name,
-            CASE WHEN MAX_BYTES = -1 THEN 'UNLIMITED' ELSE TO_CHAR(MAX_BYTES) END as max_bytes,
-            BYTES as used_bytes
-        FROM USER_TS_QUOTAS
-        ORDER BY TABLESPACE_NAME
+        SELECT name, max_bytes, used_bytes FROM (
+            -- Explicit quotas from USER_TS_QUOTAS
+            SELECT
+                TABLESPACE_NAME as name,
+                CASE WHEN MAX_BYTES = -1 THEN 'UNLIMITED' ELSE TO_CHAR(MAX_BYTES) END as max_bytes,
+                BYTES as used_bytes
+            FROM USER_TS_QUOTAS
+            UNION
+            -- Default tablespace (even without explicit quota)
+            SELECT
+                u.DEFAULT_TABLESPACE as name,
+                'UNLIMITED' as max_bytes,
+                NVL((SELECT SUM(BYTES) FROM USER_SEGMENTS WHERE TABLESPACE_NAME = u.DEFAULT_TABLESPACE), 0) as used_bytes
+            FROM USER_USERS u
+            WHERE NOT EXISTS (SELECT 1 FROM USER_TS_QUOTAS q WHERE q.TABLESPACE_NAME = u.DEFAULT_TABLESPACE)
+            UNION
+            -- Temporary tablespace
+            SELECT
+                u.TEMPORARY_TABLESPACE as name,
+                'TEMP' as max_bytes,
+                0 as used_bytes
+            FROM USER_USERS u
+        )
+        ORDER BY name
     """.trimIndent()
 
     /**
@@ -1011,5 +1030,22 @@ class OracleDialect : DatabaseDialect {
     fun getMyDefaultTablespaceQuery(): String = """
         SELECT DEFAULT_TABLESPACE, TEMPORARY_TABLESPACE
         FROM USER_USERS
+    """.trimIndent()
+
+    /**
+     * Returns tables in a specific tablespace owned by the current user.
+     */
+    fun getMyTablesInTablespaceQuery(): String = """
+        SELECT
+            USER as db_name,
+            t.TABLE_NAME as table_name,
+            'Oracle' as engine,
+            NVL(t.NUM_ROWS, 0) as "rows",
+            NVL(s.BYTES, 0) as "size",
+            NVL(TO_CHAR(t.LAST_ANALYZED, 'YYYY-MM-DD HH24:MI:SS'), '') as create_time
+        FROM USER_TABLES t
+        LEFT JOIN USER_SEGMENTS s ON t.TABLE_NAME = s.SEGMENT_NAME AND s.SEGMENT_TYPE = 'TABLE'
+        WHERE t.TABLESPACE_NAME = UPPER(?)
+        ORDER BY t.TABLE_NAME
     """.trimIndent()
 }

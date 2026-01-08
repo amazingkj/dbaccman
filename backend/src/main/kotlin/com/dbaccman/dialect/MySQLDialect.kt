@@ -691,4 +691,21 @@ class MySQLDialect : DatabaseDialect {
     fun getMyDefaultTablespaceQuery(): String = """
         SELECT DATABASE() as DEFAULT_TABLESPACE, NULL as TEMPORARY_TABLESPACE
     """.trimIndent()
+
+    /**
+     * MySQL: Get tables in the current database (tablespace = database for My Tablespaces).
+     */
+    fun getMyTablesInTablespaceQuery(): String = """
+        SELECT
+            TABLE_SCHEMA as db_name,
+            TABLE_NAME as table_name,
+            ENGINE as engine,
+            IFNULL(TABLE_ROWS, 0) as `rows`,
+            IFNULL(DATA_LENGTH + INDEX_LENGTH, 0) as `size`,
+            IFNULL(DATE_FORMAT(CREATE_TIME, '%Y-%m-%d %H:%i:%s'), '') as create_time
+        FROM information_schema.tables
+        WHERE TABLE_SCHEMA = ?
+        AND TABLE_TYPE = 'BASE TABLE'
+        ORDER BY TABLE_NAME
+    """.trimIndent()
 }

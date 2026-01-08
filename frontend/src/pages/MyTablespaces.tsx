@@ -10,12 +10,16 @@ import {
   Row,
   Col,
   Statistic,
+  Space,
+  Tooltip,
 } from 'antd'
 import {
   HddOutlined,
   ReloadOutlined,
+  RightOutlined,
+  TableOutlined,
 } from '@ant-design/icons'
-import { userApi, type UserTablespaceInfo, type UserTablespace } from '../api/user'
+import { userApi, type UserTablespaceInfo, type UserTablespace, type TablespaceTableInfo } from '../api/user'
 import { useAuthStore } from '../store/authStore'
 
 const { Title, Text } = Typography
@@ -24,6 +28,9 @@ function MyTablespaces() {
   const { user } = useAuthStore()
   const [tablespaceInfo, setTablespaceInfo] = useState<UserTablespaceInfo | null>(null)
   const [loading, setLoading] = useState(false)
+  const [selectedTablespace, setSelectedTablespace] = useState<UserTablespace | null>(null)
+  const [tablesInTablespace, setTablesInTablespace] = useState<TablespaceTableInfo[]>([])
+  const [tablesLoading, setTablesLoading] = useState(false)
 
   const fetchTablespaces = async () => {
     setLoading(true)
@@ -40,6 +47,25 @@ function MyTablespaces() {
   useEffect(() => {
     fetchTablespaces()
   }, [])
+
+  const fetchTablesInTablespace = async (name: string) => {
+    setTablesLoading(true)
+    try {
+      const response = await userApi.getTablesInTablespace(name)
+      setTablesInTablespace(response.data)
+    } catch {
+      message.error('Failed to fetch tables in tablespace')
+      setTablesInTablespace([])
+    } finally {
+      setTablesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (selectedTablespace) {
+      fetchTablesInTablespace(selectedTablespace.name)
+    }
+  }, [selectedTablespace])
 
   const formatBytes = (bytes: number) => {
     if (bytes === 0) return '0 B'
@@ -59,10 +85,16 @@ function MyTablespaces() {
       title: 'Tablespace',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string) => (
-        <Tag color="blue" icon={<HddOutlined />}>
-          {name}
-        </Tag>
+      render: (name: string, record: UserTablespace) => (
+        <Tooltip title="Click to view tables">
+          <Button
+            type="link"
+            onClick={() => setSelectedTablespace(record)}
+            style={{ padding: 0 }}
+          >
+            <HddOutlined /> {name} <RightOutlined style={{ fontSize: 10, marginLeft: 4 }} />
+          </Button>
+        </Tooltip>
       ),
     },
     {
@@ -155,8 +187,58 @@ function MyTablespaces() {
           loading={loading}
           pagination={false}
           locale={{ emptyText: 'No tablespace quotas assigned' }}
+          rowClassName={(record) =>
+            selectedTablespace?.name === record.name ? 'ant-table-row-selected' : ''
+          }
+          onRow={(record) => ({
+            onClick: () => setSelectedTablespace(record),
+            style: { cursor: 'pointer' },
+          })}
         />
       </Card>
+
+      {selectedTablespace && (
+        <Card
+          title={
+            <Space>
+              <TableOutlined />
+              Tables in "{selectedTablespace.name}"
+            </Space>
+          }
+          style={{ marginTop: 16 }}
+        >
+          <Table
+            columns={[
+              {
+                title: 'Table Name',
+                dataIndex: 'name',
+                key: 'name',
+                width: 200,
+                ellipsis: true,
+              },
+              {
+                title: 'Rows',
+                dataIndex: 'rows',
+                key: 'rows',
+                width: 100,
+                render: (rows: number) => rows.toLocaleString(),
+              },
+              {
+                title: 'Size',
+                dataIndex: 'size',
+                key: 'size',
+                width: 100,
+                render: (size: number) => formatBytes(size),
+              },
+            ]}
+            dataSource={tablesInTablespace}
+            loading={tablesLoading}
+            rowKey="name"
+            pagination={{ pageSize: 10 }}
+            locale={{ emptyText: 'No tables in this tablespace' }}
+          />
+        </Card>
+      )}
     </div>
   )
 }

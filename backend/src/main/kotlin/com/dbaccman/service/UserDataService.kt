@@ -255,6 +255,39 @@ class UserDataService {
     }
 
     /**
+     * Get tables in a specific tablespace owned by the current user.
+     */
+    fun getMyTablesInTablespace(sessionId: String, tablespaceName: String): List<TableInfo> {
+        return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            val sql = when (dialect) {
+                is OracleDialect -> dialect.getMyTablesInTablespaceQuery()
+                is MySQLDialect -> dialect.getMyTablesInTablespaceQuery()
+                is PostgreSQLDialect -> dialect.getMyTablesInTablespaceQuery()
+                else -> throw UnsupportedOperationException("This feature is not available for this database type")
+            }
+
+            conn.prepareStatement(sql).use { stmt ->
+                stmt.setString(1, tablespaceName)
+                stmt.executeQuery().use { rs ->
+                    val tables = mutableListOf<TableInfo>()
+                    while (rs.next()) {
+                        tables.add(
+                            TableInfo(
+                                name = rs.getString("table_name") ?: "",
+                                engine = rs.getString("engine"),
+                                rows = rs.getLong("rows"),
+                                size = rs.getLong("size"),
+                                createTime = rs.getString("create_time")
+                            )
+                        )
+                    }
+                    tables
+                }
+            }
+        }
+    }
+
+    /**
      * Execute a query restricted to the user's own schema.
      * Users can execute any query they have permission for within their own schema.
      */
