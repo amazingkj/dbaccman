@@ -1,5 +1,5 @@
 /**
- * Simple in-memory cache utility with TTL support.
+ * In-memory cache utility with TTL support and request deduplication.
  * Used for caching API responses to reduce unnecessary network requests.
  */
 
@@ -10,6 +10,7 @@ interface CacheEntry<T> {
 
 class ApiCache {
   private cache = new Map<string, CacheEntry<unknown>>()
+  private pendingRequests = new Map<string, Promise<unknown>>()
 
   /**
    * Get cached data if valid (not expired).
@@ -37,6 +38,48 @@ class ApiCache {
   }
 
   /**
+   * Get cached data or fetch it, preventing duplicate requests.
+   * If a request is already in flight, returns the pending promise.
+   */
+  async getOrFetch<T>(
+    key: string,
+    fetcher: () => Promise<T>,
+    ttlMs: number
+  ): Promise<T> {
+    // Check cache first
+    const cached = this.get<T>(key)
+    if (cached !== null) return cached
+
+    // Check if request is already in flight
+    const pending = this.pendingRequests.get(key)
+    if (pending) {
+      return pending as Promise<T>
+    }
+
+    // Make new request
+    const request = fetcher()
+      .then((data) => {
+        this.set(key, data, ttlMs)
+        this.pendingRequests.delete(key)
+        return data
+      })
+      .catch((error) => {
+        this.pendingRequests.delete(key)
+        throw error
+      })
+
+    this.pendingRequests.set(key, request)
+    return request
+  }
+
+  /**
+   * Check if there's a pending request for the given key.
+   */
+  hasPendingRequest(key: string): boolean {
+    return this.pendingRequests.has(key)
+  }
+
+  /**
    * Invalidate specific cache entry.
    */
   invalidate(key: string): void {
@@ -59,6 +102,16 @@ class ApiCache {
    */
   clear(): void {
     this.cache.clear()
+  }
+
+  /**
+   * Get cache statistics for debugging.
+   */
+  getStats(): { cacheSize: number; pendingRequests: number } {
+    return {
+      cacheSize: this.cache.size,
+      pendingRequests: this.pendingRequests.size,
+    }
   }
 }
 

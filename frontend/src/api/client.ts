@@ -4,6 +4,7 @@ import { useAuthStore } from '../store/authStore'
 
 const apiClient = axios.create({
   baseURL: '/api',
+  withCredentials: true,  // Send cookies with requests
   headers: {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-cache, no-store, must-revalidate',
@@ -15,12 +16,38 @@ const apiClient = axios.create({
 // Track if session expired - prevent multiple redirects
 let sessionExpiredHandled = false
 
-// Request interceptor - Add JWT token
+// CSRF token storage
+let csrfToken: string | null = null
+
+// Fetch CSRF token from server
+export async function initCsrfToken(): Promise<void> {
+  try {
+    const response = await axios.get('/api/auth/csrf-token', { withCredentials: true })
+    csrfToken = response.data.csrfToken
+  } catch (error) {
+    console.error('Failed to fetch CSRF token:', error)
+  }
+}
+
+// Refresh CSRF token
+export function refreshCsrfToken(): Promise<void> {
+  return initCsrfToken()
+}
+
+// Get current CSRF token
+export function getCsrfToken(): string | null {
+  return csrfToken
+}
+
+// Request interceptor - Add CSRF token for mutating requests
 apiClient.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
-    const token = useAuthStore.getState().token
-    if (token && config.headers) {
-      config.headers.Authorization = `Bearer ${token}`
+    // Add CSRF token for state-changing requests
+    const method = config.method?.toLowerCase()
+    if (['post', 'put', 'delete', 'patch'].includes(method || '')) {
+      if (csrfToken && config.headers) {
+        config.headers['X-CSRF-Token'] = csrfToken
+      }
     }
     return config
   },

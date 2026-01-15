@@ -9,6 +9,8 @@ export const SESSION_TIMEOUT_MS = 30 * 60 * 1000
 export const SESSION_WARNING_MS = 5 * 60 * 1000
 
 interface AuthState {
+  // Note: token is no longer stored here - authentication uses httpOnly cookies
+  // This field is kept for backward compatibility but will always be null
   token: string | null
   user: User | null
   passwordExpiryDays: number | null
@@ -22,14 +24,15 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      token: null,
+      token: null,  // Deprecated: authentication now uses httpOnly cookies
       user: null,
       passwordExpiryDays: null,
       isAuthenticated: false,
       lastActivity: Date.now(),
       setAuth: (response: LoginResponse) =>
         set({
-          token: response.token,
+          // Token is now sent as httpOnly cookie, not stored in state
+          token: null,
           user: {
             username: response.username,
             role: response.role,

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Typography,
@@ -30,12 +30,14 @@ import {
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/authStore'
 import { dashboardApi } from '../api/dashboard'
+import { StatCard } from '../components/common/StatCard'
+import { handleApiError } from '../utils/errors'
 import UserDashboard from './UserDashboard'
 import type { DashboardStats } from '../types'
 
 const { Title, Text } = Typography
 
-// Modernize-style stat card styles (white background with colored icons)
+// Stat card style configurations
 const statCardStyles = {
   accounts: {
     color: '#5d87ff',
@@ -79,88 +81,6 @@ const statCardStyles = {
   },
 }
 
-interface StatCardProps {
-  title: string
-  value: number
-  style: { color: string; bgColor: string; icon: React.ReactNode }
-  onClick?: () => void
-  suffix?: string
-  description?: string
-}
-
-function StatCard({ title, value, style, onClick, suffix, description }: StatCardProps) {
-  return (
-    <Card
-      hoverable
-      onClick={onClick}
-      style={{
-        background: '#fff',
-        borderRadius: 12,
-        border: 'none',
-        cursor: onClick ? 'pointer' : 'default',
-        overflow: 'hidden',
-        height: '100%',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-      }}
-      styles={{
-        body: {
-          padding: '20px',
-          height: 110,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-        }
-      }}
-    >
-      {/* Icon Container */}
-      <div style={{
-        width: 56,
-        height: 56,
-        borderRadius: 12,
-        background: style.bgColor,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 24,
-        color: style.color,
-        flexShrink: 0,
-      }}>
-        {style.icon}
-      </div>
-
-      {/* Content */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 13,
-          color: '#5a6a85',
-          fontWeight: 500,
-          marginBottom: 4,
-        }}>
-          {title}
-        </div>
-        <div style={{
-          fontSize: 24,
-          fontWeight: 600,
-          color: '#2a3547',
-          lineHeight: 1.2,
-        }}>
-          {value.toLocaleString()}{suffix && <span style={{ fontSize: 14, marginLeft: 4, color: '#5a6a85' }}>{suffix}</span>}
-        </div>
-        {description && (
-          <div style={{
-            fontSize: 12,
-            color: style.color,
-            marginTop: 4,
-            fontWeight: 500,
-          }}>
-            {description}
-          </div>
-        )}
-      </div>
-    </Card>
-  )
-}
-
 function AdminDashboard() {
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -174,17 +94,17 @@ function AdminDashboard() {
     sessionStorage.setItem('healthAlertsDismissed', 'true')
   }
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = useCallback(async () => {
     setLoading(true)
     try {
       const response = await dashboardApi.getStats()
       setStats(response.data)
     } catch (error) {
-      console.error('Failed to fetch dashboard data:', error)
+      handleApiError(error, { defaultMessage: 'Failed to load dashboard data' })
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     fetchDashboardData()

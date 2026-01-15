@@ -4,6 +4,7 @@ import { Spin } from 'antd'
 import MainLayout from './components/Layout/MainLayout'
 import ProtectedRoute from './components/common/ProtectedRoute'
 import AdminRoute from './components/common/AdminRoute'
+import ErrorBoundary from './components/common/ErrorBoundary'
 
 // Lazy load pages for code splitting
 const Login = lazy(() => import('./pages/Login'))
@@ -33,33 +34,35 @@ const PageLoading = () => (
 
 function App() {
   return (
-    <Suspense fallback={<PageLoading />}>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route
-          path="/"
-          element={
-            <ProtectedRoute>
-              <MainLayout />
-            </ProtectedRoute>
-          }
-        >
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="dashboard" element={<Dashboard />} />
-          {/* Admin-only routes */}
-          <Route path="accounts" element={<AdminRoute><Accounts /></AdminRoute>} />
-          <Route path="permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
-          <Route path="sessions" element={<AdminRoute><Sessions /></AdminRoute>} />
-          <Route path="tables" element={<AdminRoute><Tables /></AdminRoute>} />
-          <Route path="tablespaces" element={<AdminRoute><Tablespaces /></AdminRoute>} />
-          <Route path="sql-console" element={<AdminRoute><SqlConsole /></AdminRoute>} />
-          {/* User routes (own schema only) */}
-          <Route path="my-tables" element={<MyTables />} />
-          <Route path="my-tablespaces" element={<MyTablespaces />} />
-          <Route path="my-console" element={<MyConsole />} />
-        </Route>
-      </Routes>
-    </Suspense>
+    <ErrorBoundary>
+      <Suspense fallback={<PageLoading />}>
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <MainLayout />
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            {/* Admin-only routes */}
+            <Route path="accounts" element={<AdminRoute><Accounts /></AdminRoute>} />
+            <Route path="permissions" element={<AdminRoute><Permissions /></AdminRoute>} />
+            <Route path="sessions" element={<AdminRoute><Sessions /></AdminRoute>} />
+            <Route path="tables" element={<AdminRoute><Tables /></AdminRoute>} />
+            <Route path="tablespaces" element={<AdminRoute><Tablespaces /></AdminRoute>} />
+            <Route path="sql-console" element={<AdminRoute><SqlConsole /></AdminRoute>} />
+            {/* User routes (own schema only) */}
+            <Route path="my-tables" element={<MyTables />} />
+            <Route path="my-tablespaces" element={<MyTablespaces />} />
+            <Route path="my-console" element={<MyConsole />} />
+          </Route>
+        </Routes>
+      </Suspense>
+    </ErrorBoundary>
   )
 }
 

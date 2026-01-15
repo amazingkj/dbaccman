@@ -1,11 +1,13 @@
 package com.dbaccman.routes
 
+import com.dbaccman.config.JwtConfig
 import com.dbaccman.config.SessionConnectionManager
 import com.dbaccman.dialect.DatabaseType
 import com.dbaccman.model.ConnectionLoginRequest
 import com.dbaccman.model.ConnectionLoginResponse
 import com.dbaccman.service.PrivilegeService
 import com.dbaccman.util.AuditLogger
+import com.dbaccman.util.CsrfUtil
 import com.dbaccman.util.JwtUtil
 import com.dbaccman.util.getSessionId
 import com.dbaccman.util.getUsername
@@ -25,6 +27,12 @@ fun Route.authRoutes() {
     val privilegeService = PrivilegeService()
 
     route("/auth") {
+        // CSRF token endpoint - generates a new CSRF token for the client
+        get("/csrf-token") {
+            val token = CsrfUtil.generateToken()
+            call.respond(mapOf("csrfToken" to token))
+        }
+
         post("/login") {
             val request = call.receive<ConnectionLoginRequest>()
             val effectivePort = request.getEffectivePort()
@@ -64,9 +72,22 @@ fun Route.authRoutes() {
                     ipAddress = clientIp
                 )
 
+                // Set httpOnly cookie with JWT token
+                call.response.cookies.append(
+                    Cookie(
+                        name = "auth_token",
+                        value = token,
+                        httpOnly = true,
+                        secure = false,  // Set to true in production with HTTPS
+                        path = "/",
+                        maxAge = (JwtConfig.expirationMs / 1000).toInt(),
+                        extensions = mapOf("SameSite" to "Lax")
+                    )
+                )
+
                 call.respond(
                     ConnectionLoginResponse(
-                        token = token,
+                        token = token,  // Keep for backward compatibility during transition
                         username = request.username,
                         role = role,
                         host = request.host,
@@ -90,16 +111,35 @@ fun Route.authRoutes() {
         }
 
         post("/logout") {
-            // Get session ID from token and cleanup
+            // Get session ID from token (from cookie or header) and cleanup
+            val cookieToken = call.request.cookies["auth_token"]
             val authHeader = call.request.header("Authorization")
-            if (authHeader?.startsWith("Bearer ") == true) {
-                val token = authHeader.substring(7)
+            val headerToken = if (authHeader?.startsWith("Bearer ") == true) {
+                authHeader.substring(7)
+            } else null
+
+            val token = cookieToken ?: headerToken
+            if (token != null) {
                 val sessionId = JwtUtil.getSessionIdFromToken(token)
                 if (sessionId != null) {
                     SessionConnectionManager.closeSession(sessionId)
                     AuditLogger.log("LOGOUT", "Session $sessionId closed")
                 }
             }
+
+            // Clear the auth cookie
+            call.response.cookies.append(
+                Cookie(
+                    name = "auth_token",
+                    value = "",
+                    httpOnly = true,
+                    secure = false,
+                    path = "/",
+                    maxAge = 0,
+                    extensions = mapOf("SameSite" to "Lax")
+                )
+            )
+
             call.respond(MessageResponse("Logged out successfully"))
         }
 

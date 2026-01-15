@@ -61,6 +61,16 @@ fun Application.configureJwt() {
                     null
                 }
             }
+            // Extract JWT from cookie or Authorization header
+            authHeader { call ->
+                // First try to get token from httpOnly cookie
+                val cookieToken = call.request.cookies["auth_token"]
+                // Fallback to Authorization header for backward compatibility
+                val headerToken = call.request.headers["Authorization"]?.removePrefix("Bearer ")
+
+                val token = cookieToken ?: headerToken
+                token?.let { io.ktor.http.auth.HttpAuthHeader.Single("Bearer", it) }
+            }
         }
     }
 }

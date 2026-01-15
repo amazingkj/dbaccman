@@ -12,7 +12,6 @@ import {
   Tag,
   Popconfirm,
   message,
-  Card,
   Row,
   Col,
   Alert,
@@ -41,6 +40,7 @@ import { accountsApi } from '../api/accounts'
 import { permissionsApi } from '../api/permissions'
 import { formatToLocalTime } from '../utils/dateUtils'
 import { useAuthStore } from '../store/authStore'
+import { StatCard } from '../components/common/StatCard'
 import type { Account, CreateAccountRequest, ExpiringAccount, CloneAccountRequest, BatchOperationResult, PaginationInfo, AccountStats } from '../types'
 
 // Oracle system privileges for account creation
@@ -88,7 +88,7 @@ const getPrivilegesForDbType = (dbType: string | undefined) => {
 
 const { Title, Text } = Typography
 
-// Modernize-style stat card styles (white background with colored icons)
+// Stat card style configurations
 const statCardStyles = {
   total: {
     color: '#5d87ff',
@@ -110,68 +110,6 @@ const statCardStyles = {
     bgColor: 'rgba(19, 222, 185, 0.1)',
     icon: <UserOutlined />,
   },
-}
-
-interface StatCardProps {
-  title: string
-  value: number
-  style: { color: string; bgColor: string; icon: React.ReactNode }
-}
-
-function StatCard({ title, value, style }: StatCardProps) {
-  return (
-    <Card
-      style={{
-        background: '#fff',
-        borderRadius: 12,
-        border: 'none',
-        height: '100%',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-      }}
-      styles={{
-        body: {
-          padding: '16px 20px',
-          height: 90,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-        }
-      }}
-    >
-      <div style={{
-        width: 48,
-        height: 48,
-        borderRadius: 10,
-        background: style.bgColor,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 22,
-        color: style.color,
-        flexShrink: 0,
-      }}>
-        {style.icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 12,
-          color: '#5a6a85',
-          fontWeight: 500,
-          marginBottom: 2,
-        }}>
-          {title}
-        </div>
-        <div style={{
-          fontSize: 22,
-          fontWeight: 600,
-          color: '#2a3547',
-          lineHeight: 1.2,
-        }}>
-          {value.toLocaleString()}
-        </div>
-      </div>
-    </Card>
-  )
 }
 
 // Oracle system users that should not be modified (moved outside component)
@@ -691,13 +629,14 @@ function Accounts() {
         />
       )}
 
-      {/* Stats Cards - CoreUI Style */}
+      {/* Stats Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         <Col xs={24} sm={12} lg={6}>
           <StatCard
             title="Total Accounts"
             value={stats.totalAccounts}
             style={statCardStyles.total}
+            compact
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -705,6 +644,7 @@ function Accounts() {
             title="Locked Accounts"
             value={stats.lockedAccounts}
             style={statCardStyles.locked}
+            compact
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -712,6 +652,7 @@ function Accounts() {
             title="Expiring Soon"
             value={expiringAccounts.length}
             style={statCardStyles.expiring}
+            compact
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -719,6 +660,7 @@ function Accounts() {
             title="Active Accounts"
             value={stats.activeAccounts}
             style={statCardStyles.active}
+            compact
           />
         </Col>
       </Row>

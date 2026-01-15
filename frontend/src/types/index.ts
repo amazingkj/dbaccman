@@ -23,7 +23,7 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
-  token: string
+  token?: string  // Deprecated: token is now sent as httpOnly cookie
   username: string
   role: 'admin' | 'user'
   host: string
