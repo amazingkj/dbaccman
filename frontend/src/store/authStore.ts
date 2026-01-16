@@ -12,6 +12,7 @@ interface AuthState {
   // Note: token is no longer stored here - authentication uses httpOnly cookies
   // This field is kept for backward compatibility but will always be null
   token: string | null
+  sessionId: string | null
   user: User | null
   passwordExpiryDays: number | null
   isAuthenticated: boolean
@@ -25,6 +26,7 @@ export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
       token: null,  // Deprecated: authentication now uses httpOnly cookies
+      sessionId: null,
       user: null,
       passwordExpiryDays: null,
       isAuthenticated: false,
@@ -33,6 +35,7 @@ export const useAuthStore = create<AuthState>()(
         set({
           // Token is now sent as httpOnly cookie, not stored in state
           token: null,
+          sessionId: response.sessionId,
           user: {
             username: response.username,
             role: response.role,
@@ -48,6 +51,7 @@ export const useAuthStore = create<AuthState>()(
         apiCache.clear() // Clear all cached API responses
         set({
           token: null,
+          sessionId: null,
           user: null,
           passwordExpiryDays: null,
           isAuthenticated: false,

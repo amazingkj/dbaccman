@@ -4,6 +4,11 @@ import com.dbaccman.dialect.DatabaseDialect
 import com.dbaccman.dialect.DatabaseType
 import com.dbaccman.dialect.DialectFactory
 import com.dbaccman.dialect.OracleDialect
+import com.dbaccman.util.CircuitBreakerRegistry
+import com.dbaccman.util.CircuitBreakerOpenException
+import com.dbaccman.util.HikariMonitor
+import com.dbaccman.util.PoolStats
+import com.dbaccman.util.PoolSummary
 import com.zaxxer.hikari.HikariConfig
 import com.zaxxer.hikari.HikariDataSource
 import org.slf4j.LoggerFactory
@@ -56,6 +61,7 @@ object SessionConnectionManager {
     /**
      * Creates a new session with the given database credentials.
      * Validates the connection before returning the session ID.
+     * Uses Circuit Breaker pattern to prevent cascading failures.
      */
     fun createSession(
         host: String,
@@ -65,75 +71,88 @@ object SessionConnectionManager {
         dbType: DatabaseType = DatabaseType.MYSQL,
         database: String? = null
     ): String {
-        val sessionId = UUID.randomUUID().toString()
-        val dialect = DialectFactory.getDialect(dbType)
-        val jdbcUrl = dialect.getJdbcUrl(host, port, database)
+        // Get circuit breaker for this database endpoint
+        val circuitBreaker = CircuitBreakerRegistry.getDatabaseBreaker(host, port, dbType.name)
 
-        val config = HikariConfig().apply {
-            this.jdbcUrl = jdbcUrl
-            this.username = username
-            this.password = password
-            driverClassName = dialect.getDriverClassName()
-            maximumPoolSize = 5
-            minimumIdle = 1
-            isAutoCommit = true
-            connectionTimeout = 10000 // 10 seconds
-            idleTimeout = 10 * 60 * 1000 // 10 minutes
-            maxLifetime = 30 * 60 * 1000 // 30 minutes
-            connectionTestQuery = dialect.getConnectionTestQuery()
-            poolName = "session-$sessionId"
-        }
+        return circuitBreaker.execute {
+            val sessionId = UUID.randomUUID().toString()
+            val dialect = DialectFactory.getDialect(dbType)
+            val jdbcUrl = dialect.getJdbcUrl(host, port, database)
 
-        val dataSource = HikariDataSource(config)
+            val config = HikariConfig().apply {
+                this.jdbcUrl = jdbcUrl
+                this.username = username
+                this.password = password
+                driverClassName = dialect.getDriverClassName()
+                maximumPoolSize = 5
+                minimumIdle = 1
+                isAutoCommit = true
+                connectionTimeout = 10000 // 10 seconds
+                idleTimeout = 10 * 60 * 1000 // 10 minutes
+                maxLifetime = 30 * 60 * 1000 // 30 minutes
+                connectionTestQuery = dialect.getConnectionTestQuery()
+                poolName = "session-$sessionId"
+            }
 
-        // Validate connection and detect Oracle CDB root
-        var isContainerRoot = false
-        try {
-            dataSource.connection.use { conn ->
-                conn.createStatement().use { stmt ->
-                    stmt.execute(dialect.getConnectionTestQuery())
-                }
+            var dataSource: HikariDataSource? = null
+            var isContainerRoot = false
 
-                // Check if Oracle CDB root
-                if (dialect is OracleDialect) {
-                    try {
-                        conn.createStatement().use { stmt ->
-                            stmt.executeQuery(dialect.getContainerNameSql()).use { rs ->
-                                if (rs.next()) {
-                                    val containerName = rs.getString(1)
-                                    logger.info("Oracle container name detected: '$containerName'")
-                                    isContainerRoot = containerName == "CDB\$ROOT"
-                                    if (isContainerRoot) {
-                                        logger.info("Connected to Oracle CDB root - C## prefix will be used for user management")
-                                    } else {
-                                        logger.info("Connected to Oracle PDB '$containerName' - local users will be created")
+            try {
+                dataSource = HikariDataSource(config)
+
+                // Validate connection and detect Oracle CDB root
+                dataSource.connection.use { conn ->
+                    conn.createStatement().use { stmt ->
+                        stmt.execute(dialect.getConnectionTestQuery())
+                    }
+
+                    // Check if Oracle CDB root
+                    if (dialect is OracleDialect) {
+                        try {
+                            conn.createStatement().use { stmt ->
+                                stmt.executeQuery(dialect.getContainerNameSql()).use { rs ->
+                                    if (rs.next()) {
+                                        val containerName = rs.getString(1)
+                                        logger.info("Oracle container name detected: '$containerName'")
+                                        isContainerRoot = containerName == "CDB\$ROOT"
+                                        if (isContainerRoot) {
+                                            logger.info("Connected to Oracle CDB root - C## prefix will be used for user management")
+                                        } else {
+                                            logger.info("Connected to Oracle PDB '$containerName' - local users will be created")
+                                        }
                                     }
                                 }
                             }
+                        } catch (e: Exception) {
+                            // Ignore - might not have access to this info
+                            logger.warn("Could not determine Oracle container type: ${e.message}")
                         }
-                    } catch (e: Exception) {
-                        // Ignore - might not have access to this info
-                        logger.warn("Could not determine Oracle container type: ${e.message}")
                     }
                 }
+            } catch (e: Exception) {
+                // Ensure dataSource is closed on any error
+                try {
+                    dataSource?.close()
+                } catch (closeEx: Exception) {
+                    logger.error("Error closing dataSource during cleanup", closeEx)
+                }
+                throw e
             }
-        } catch (e: Exception) {
-            dataSource.close()
-            throw e
+
+            // At this point, dataSource is guaranteed non-null and validated
+            sessionPools[sessionId] = SessionPool(
+                dataSource = dataSource,
+                host = host,
+                port = port,
+                username = username,
+                dbType = dbType,
+                dialect = dialect,
+                isContainerRoot = isContainerRoot
+            )
+            logger.info("Created session $sessionId for $username@$host:$port (${dbType.displayName})")
+
+            sessionId
         }
-
-        sessionPools[sessionId] = SessionPool(
-            dataSource = dataSource,
-            host = host,
-            port = port,
-            username = username,
-            dbType = dbType,
-            dialect = dialect,
-            isContainerRoot = isContainerRoot
-        )
-        logger.info("Created session $sessionId for $username@$host:$port (${dbType.displayName})")
-
-        return sessionId
     }
 
     /**
@@ -224,6 +243,42 @@ object SessionConnectionManager {
      * Returns the number of active sessions.
      */
     fun getActiveSessionCount(): Int = sessionPools.size
+
+    /**
+     * Get connection pool statistics for all sessions.
+     */
+    fun getPoolSummary(): PoolSummary {
+        val poolStats = sessionPools.values.mapNotNull { pool ->
+            HikariMonitor.getPoolStats(pool.dataSource)
+        }
+
+        return PoolSummary(
+            totalPools = poolStats.size,
+            totalActiveConnections = poolStats.sumOf { it.activeConnections },
+            totalIdleConnections = poolStats.sumOf { it.idleConnections },
+            totalConnections = poolStats.sumOf { it.totalConnections },
+            pools = poolStats
+        )
+    }
+
+    /**
+     * Get connection pool statistics for a specific session.
+     */
+    fun getPoolStats(sessionId: String): PoolStats? {
+        val pool = sessionPools[sessionId] ?: return null
+        return HikariMonitor.getPoolStats(pool.dataSource)
+    }
+
+    /**
+     * Log all pool statistics (for monitoring/debugging).
+     */
+    fun logAllPoolStats() {
+        sessionPools.values.forEach { pool ->
+            HikariMonitor.getPoolStats(pool.dataSource)?.let { stats ->
+                HikariMonitor.logPoolStats(stats)
+            }
+        }
+    }
 
     /**
      * Shuts down all sessions and the cleanup thread.

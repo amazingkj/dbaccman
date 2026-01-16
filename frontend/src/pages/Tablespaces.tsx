@@ -32,95 +32,18 @@ import {
 import { tablespacesApi } from '../api/tablespaces'
 import { tablesApi } from '../api/tables'
 import { useAuthStore } from '../store/authStore'
+import { StatCard, STAT_CARD_STYLES } from '../components/common/StatCard'
 import type { TablespaceInfo, CreateTablespaceRequest, TableInfo, DatabaseInfo } from '../types'
 
 const { Title, Text } = Typography
 const { Option } = Select
 
-// Modernize-style stat card styles (white background with colored icons)
+// Stat card style configurations - using shared STAT_CARD_STYLES constants
 const statCardStyles = {
-  total: {
-    color: '#5d87ff',
-    bgColor: 'rgba(93, 135, 255, 0.1)',
-    icon: <DatabaseOutlined />,
-  },
-  general: {
-    color: '#49beff',
-    bgColor: 'rgba(73, 190, 255, 0.1)',
-    icon: <HddOutlined />,
-  },
-  size: {
-    color: '#13deb9',
-    bgColor: 'rgba(19, 222, 185, 0.1)',
-    icon: <PieChartOutlined />,
-  },
-  allocated: {
-    color: '#ffae1f',
-    bgColor: 'rgba(255, 174, 31, 0.1)',
-    icon: <HddOutlined />,
-  },
-}
-
-interface StatCardProps {
-  title: string
-  value: string | number
-  style: { color: string; bgColor: string; icon: React.ReactNode }
-}
-
-function StatCard({ title, value, style }: StatCardProps) {
-  return (
-    <Card
-      style={{
-        background: '#fff',
-        borderRadius: 12,
-        border: 'none',
-        height: '100%',
-        boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-      }}
-      styles={{
-        body: {
-          padding: '16px 20px',
-          height: 90,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-        }
-      }}
-    >
-      <div style={{
-        width: 48,
-        height: 48,
-        borderRadius: 10,
-        background: style.bgColor,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 22,
-        color: style.color,
-        flexShrink: 0,
-      }}>
-        {style.icon}
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 12,
-          color: '#5a6a85',
-          fontWeight: 500,
-          marginBottom: 2,
-        }}>
-          {title}
-        </div>
-        <div style={{
-          fontSize: 22,
-          fontWeight: 600,
-          color: '#2a3547',
-          lineHeight: 1.2,
-        }}>
-          {typeof value === 'number' ? value.toLocaleString() : value}
-        </div>
-      </div>
-    </Card>
-  )
+  total: { ...STAT_CARD_STYLES.primary, icon: <DatabaseOutlined /> },
+  general: { ...STAT_CARD_STYLES.info, icon: <HddOutlined /> },
+  size: { ...STAT_CARD_STYLES.success, icon: <PieChartOutlined /> },
+  allocated: { ...STAT_CARD_STYLES.warning, icon: <HddOutlined /> },
 }
 
 function formatBytes(bytes: number): string {
@@ -521,6 +444,7 @@ function Tablespaces() {
             title="Total Tablespaces"
             value={tablespaces.length}
             style={statCardStyles.total}
+            compact
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -528,6 +452,7 @@ function Tablespaces() {
             title="General Tablespaces"
             value={generalCount}
             style={statCardStyles.general}
+            compact
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -535,6 +460,7 @@ function Tablespaces() {
             title="Total Size"
             value={formatBytes(totalSize)}
             style={statCardStyles.size}
+            compact
           />
         </Col>
         <Col xs={24} sm={12} lg={6}>
@@ -542,6 +468,7 @@ function Tablespaces() {
             title="Total Allocated"
             value={formatBytes(totalAllocated)}
             style={statCardStyles.allocated}
+            compact
           />
         </Col>
       </Row>

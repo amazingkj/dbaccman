@@ -18,6 +18,7 @@ data class ConnectionLoginRequest(
 @Serializable
 data class ConnectionLoginResponse(
     val token: String,
+    val sessionId: String,
     val username: String,
     val role: String,
     val host: String,

@@ -107,6 +107,7 @@ class AuthRoutesTest {
     fun testConnectionLoginResponseModel() {
         val response = ConnectionLoginResponse(
             token = "jwt-token-here",
+            sessionId = "test-session-id",
             username = "admin",
             role = "admin",
             host = "localhost",
@@ -116,6 +117,7 @@ class AuthRoutesTest {
         )
 
         assertEquals("jwt-token-here", response.token)
+        assertEquals("test-session-id", response.sessionId)
         assertEquals("admin", response.username)
         assertEquals("admin", response.role)
         assertEquals("localhost", response.host)
@@ -129,6 +131,7 @@ class AuthRoutesTest {
     fun testConnectionLoginResponseNullExpiry() {
         val response = ConnectionLoginResponse(
             token = "token",
+            sessionId = "test-session-id",
             username = "user",
             role = "user",
             host = "localhost",
@@ -317,8 +320,8 @@ class AuthRoutesTest {
     @Test
     @DisplayName("ConnectionLoginResponse equality should work correctly")
     fun testConnectionLoginResponseEquality() {
-        val resp1 = ConnectionLoginResponse("token", "user", "role", "host", 3306, DatabaseType.MYSQL, 30)
-        val resp2 = ConnectionLoginResponse("token", "user", "role", "host", 3306, DatabaseType.MYSQL, 30)
+        val resp1 = ConnectionLoginResponse("token", "session1", "user", "role", "host", 3306, DatabaseType.MYSQL, 30)
+        val resp2 = ConnectionLoginResponse("token", "session1", "user", "role", "host", 3306, DatabaseType.MYSQL, 30)
 
         assertEquals(resp1, resp2)
         assertEquals(resp1.hashCode(), resp2.hashCode())

@@ -1,0 +1,165 @@
+-- Oracle Test Accounts Creation Script
+-- Run as SYSDBA or user with CREATE USER privilege
+-- For PDB, connect to the PDB first: ALTER SESSION SET CONTAINER = your_pdb;
+
+-- Development Team
+CREATE USER dev_alice IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 100M ON USERS;
+CREATE USER dev_bob IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 100M ON USERS;
+CREATE USER dev_charlie IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 50M ON USERS;
+CREATE USER dev_diana IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 50M ON USERS;
+CREATE USER dev_evan IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 20M ON USERS;
+
+-- QA Team
+CREATE USER qa_frank IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 100M ON USERS;
+CREATE USER qa_grace IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 50M ON USERS;
+CREATE USER qa_henry IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 20M ON USERS;
+
+-- Data Team
+CREATE USER data_iris IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 200M ON USERS;
+CREATE USER data_jack IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 100M ON USERS;
+CREATE USER data_kate IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 50M ON USERS;
+
+-- Operations Team
+CREATE USER ops_leo IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 50M ON USERS;
+CREATE USER ops_mia IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 50M ON USERS;
+
+-- Analytics Team
+CREATE USER analytics_noah IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 100M ON USERS;
+CREATE USER analytics_olivia IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 100M ON USERS;
+
+-- Service Accounts
+CREATE USER svc_api IDENTIFIED BY "Service1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 50M ON USERS;
+CREATE USER svc_batch IDENTIFIED BY "Service1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 100M ON USERS;
+CREATE USER svc_report IDENTIFIED BY "Service1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 20M ON USERS;
+CREATE USER svc_backup IDENTIFIED BY "Service1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA UNLIMITED ON USERS;
+
+-- Read-only Accounts
+CREATE USER readonly_peter IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP;
+CREATE USER readonly_quinn IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP;
+
+-- Test Accounts
+CREATE USER test_user1 IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 10M ON USERS;
+CREATE USER test_user2 IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 10M ON USERS;
+CREATE USER test_user3 IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 10M ON USERS;
+CREATE USER test_user4 IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 10M ON USERS;
+CREATE USER test_user5 IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP QUOTA 10M ON USERS;
+
+-- Locked account for testing
+CREATE USER locked_user IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP ACCOUNT LOCK;
+
+-- Expired password account for testing
+CREATE USER expired_user IDENTIFIED BY "Test1234!" DEFAULT TABLESPACE USERS TEMPORARY TABLESPACE TEMP PASSWORD EXPIRE;
+
+-- Grant basic session privilege to all users
+GRANT CREATE SESSION TO dev_alice, dev_bob, dev_charlie, dev_diana, dev_evan;
+GRANT CREATE SESSION TO qa_frank, qa_grace, qa_henry;
+GRANT CREATE SESSION TO data_iris, data_jack, data_kate;
+GRANT CREATE SESSION TO ops_leo, ops_mia;
+GRANT CREATE SESSION TO analytics_noah, analytics_olivia;
+GRANT CREATE SESSION TO svc_api, svc_batch, svc_report, svc_backup;
+GRANT CREATE SESSION TO readonly_peter, readonly_quinn;
+GRANT CREATE SESSION TO test_user1, test_user2, test_user3, test_user4, test_user5;
+GRANT CREATE SESSION TO locked_user, expired_user;
+
+-- Grant DDL privileges to lead developers
+GRANT CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE TO dev_alice;
+GRANT CREATE TABLE, CREATE VIEW, CREATE SEQUENCE TO dev_bob;
+GRANT CREATE TABLE TO dev_charlie;
+
+-- Grant DDL to QA lead
+GRANT CREATE TABLE, CREATE VIEW TO qa_frank;
+
+-- Grant DDL to Data team
+GRANT CREATE TABLE, CREATE VIEW, CREATE SEQUENCE, CREATE PROCEDURE TO data_iris;
+GRANT CREATE TABLE TO data_jack;
+
+-- Grant DDL to Analytics
+GRANT CREATE TABLE, CREATE VIEW TO analytics_noah;
+
+-- Create test tables for dev_alice (as dev_alice)
+-- First, let dev_alice create some tables
+-- Connect as dev_alice and run:
+
+-- Create tables in dev_alice schema (run after connecting as dev_alice)
+/*
+CREATE TABLE products (
+    id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    name VARCHAR2(100) NOT NULL,
+    price NUMBER(10,2),
+    stock NUMBER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE orders (
+    id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    product_id NUMBER REFERENCES products(id),
+    customer_name VARCHAR2(100),
+    quantity NUMBER,
+    order_date DATE DEFAULT SYSDATE
+);
+
+CREATE TABLE customers (
+    id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    name VARCHAR2(100),
+    email VARCHAR2(100) UNIQUE,
+    phone VARCHAR2(20),
+    registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO products (name, price, stock) VALUES ('Server Rack', 2999.99, 10);
+INSERT INTO products (name, price, stock) VALUES ('Network Switch', 599.99, 25);
+INSERT INTO products (name, price, stock) VALUES ('Firewall Device', 1499.99, 15);
+INSERT INTO products (name, price, stock) VALUES ('UPS Battery', 399.99, 30);
+INSERT INTO products (name, price, stock) VALUES ('Cable Kit', 49.99, 100);
+
+INSERT INTO customers (name, email, phone) VALUES ('Tech Corp', 'tech@example.com', '555-1001');
+INSERT INTO customers (name, email, phone) VALUES ('Data Inc', 'data@example.com', '555-1002');
+INSERT INTO customers (name, email, phone) VALUES ('Cloud Ltd', 'cloud@example.com', '555-1003');
+
+INSERT INTO orders (product_id, customer_name, quantity) VALUES (1, 'Tech Corp', 2);
+INSERT INTO orders (product_id, customer_name, quantity) VALUES (2, 'Data Inc', 5);
+INSERT INTO orders (product_id, customer_name, quantity) VALUES (3, 'Cloud Ltd', 1);
+
+COMMIT;
+
+-- Grant select to other dev team members
+GRANT SELECT ON products TO dev_bob, dev_charlie, dev_diana, dev_evan;
+GRANT SELECT ON orders TO dev_bob, dev_charlie, dev_diana, dev_evan;
+GRANT SELECT ON customers TO dev_bob, dev_charlie, dev_diana, dev_evan;
+
+-- Grant more privileges to dev_bob
+GRANT INSERT, UPDATE ON products TO dev_bob;
+GRANT INSERT, UPDATE ON orders TO dev_bob;
+*/
+
+-- Create a test tablespace (optional, requires appropriate privileges)
+-- CREATE TABLESPACE test_ts DATAFILE 'test_ts01.dbf' SIZE 50M AUTOEXTEND ON NEXT 10M MAXSIZE 200M;
+
+-- Grant quota on test tablespace
+-- ALTER USER data_iris QUOTA 100M ON test_ts;
+-- ALTER USER analytics_noah QUOTA 50M ON test_ts;
+
+-- Summary query
+SELECT 'Oracle Test Accounts Created Successfully' as status FROM DUAL;
+
+SELECT username, account_status, default_tablespace, temporary_tablespace, created
+FROM dba_users
+WHERE username NOT IN (
+    'SYS', 'SYSTEM', 'OUTLN', 'DIP', 'ORACLE_OCM', 'DBSNMP', 'APPQOSSYS',
+    'WMSYS', 'EXFSYS', 'CTXSYS', 'XDB', 'ANONYMOUS', 'ORDSYS', 'ORDDATA',
+    'ORDPLUGINS', 'SI_INFORMTN_SCHEMA', 'MDSYS', 'OLAPSYS', 'MDDATA',
+    'SPATIAL_WFS_ADMIN_USR', 'SPATIAL_CSW_ADMIN_USR', 'APEX_PUBLIC_USER',
+    'APEX_040000', 'APEX_040100', 'APEX_040200', 'FLOWS_FILES', 'HR', 'OE',
+    'PM', 'IX', 'SH', 'BI', 'SCOTT', 'GSMADMIN_INTERNAL', 'GSMCATUSER',
+    'GSMUSER', 'SYSBACKUP', 'SYSDG', 'SYSKM', 'SYSRAC', 'SYS$UMF',
+    'AUDSYS', 'DBSFWUSER', 'GGSYS', 'PDBADMIN', 'REMOTE_SCHEDULER_AGENT',
+    'OJVMSYS', 'XS$NULL', 'LBACSYS', 'DVF', 'DVSYS'
+)
+ORDER BY username;
+
+-- Show quotas
+SELECT username, tablespace_name,
+       CASE WHEN max_bytes = -1 THEN 'UNLIMITED' ELSE TO_CHAR(max_bytes/1024/1024) || 'M' END as quota
+FROM dba_ts_quotas
+WHERE username NOT LIKE 'SYS%' AND username NOT LIKE 'APEX%'
+ORDER BY username, tablespace_name;

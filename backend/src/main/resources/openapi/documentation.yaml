@@ -1,0 +1,541 @@
+openapi: 3.0.3
+info:
+  title: DB Account Manager API
+  description: |
+    API for managing database accounts, permissions, sessions, and queries.
+    Supports MySQL, Oracle, and PostgreSQL databases.
+  version: 1.0.0
+  contact:
+    name: API Support
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:12080/api
+    description: Development server
+  - url: https://your-production-url/api
+    description: Production server
+
+tags:
+  - name: Authentication
+    description: User authentication and session management
+  - name: Accounts
+    description: Database account management
+  - name: Permissions
+    description: Permission and privilege management
+  - name: Sessions
+    description: Active database session management
+  - name: Queries
+    description: SQL query execution
+  - name: Tables
+    description: Table metadata and structure
+  - name: Tablespaces
+    description: Tablespace management (Oracle)
+  - name: Dashboard
+    description: Dashboard statistics
+
+paths:
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login to database
+      description: Authenticate with database credentials and receive a JWT token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many login attempts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/logout:
+    post:
+      tags:
+        - Authentication
+      summary: Logout
+      description: Invalidate the current session
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Logout successful
+
+  /auth/csrf-token:
+    get:
+      tags:
+        - Authentication
+      summary: Get CSRF token
+      description: Get a CSRF token for subsequent state-changing requests
+      responses:
+        '200':
+          description: CSRF token
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  csrfToken:
+                    type: string
+
+  /accounts:
+    get:
+      tags:
+        - Accounts
+      summary: List all accounts
+      description: Get a paginated list of database accounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of accounts
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccountListResponse'
+
+    post:
+      tags:
+        - Accounts
+      summary: Create new account
+      description: Create a new database account
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAccountRequest'
+      responses:
+        '201':
+          description: Account created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Account'
+        '409':
+          description: Account already exists
+
+  /accounts/{username}:
+    delete:
+      tags:
+        - Accounts
+      summary: Delete account
+      description: Delete a database account
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: host
+          in: query
+          schema:
+            type: string
+            default: '%'
+      responses:
+        '200':
+          description: Account deleted
+        '404':
+          description: Account not found
+
+  /permissions:
+    get:
+      tags:
+        - Permissions
+      summary: Get user permissions
+      description: Get permissions for a specific user
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: username
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: host
+          in: query
+          schema:
+            type: string
+            default: '%'
+      responses:
+        '200':
+          description: List of permissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Permission'
+
+    post:
+      tags:
+        - Permissions
+      summary: Grant permissions
+      description: Grant privileges to a user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GrantPermissionRequest'
+      responses:
+        '200':
+          description: Permissions granted
+
+  /sessions:
+    get:
+      tags:
+        - Sessions
+      summary: Get active sessions
+      description: Get list of active database sessions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SessionInfo'
+
+  /sessions/{pid}/kill:
+    post:
+      tags:
+        - Sessions
+      summary: Kill session
+      description: Terminate a database session
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pid
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Session killed
+        '404':
+          description: Session not found
+
+  /query:
+    post:
+      tags:
+        - Queries
+      summary: Execute SQL query
+      description: Execute a SQL query and return results
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/QueryRequest'
+      responses:
+        '200':
+          description: Query results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QueryResult'
+        '400':
+          description: Invalid query or syntax error
+        '504':
+          description: Query timeout
+
+  /dashboard/stats:
+    get:
+      tags:
+        - Dashboard
+      summary: Get dashboard statistics
+      description: Get overview statistics for the dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Dashboard statistics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardStats'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - host
+        - port
+        - username
+        - password
+        - dbType
+      properties:
+        host:
+          type: string
+          example: localhost
+        port:
+          type: integer
+          example: 3306
+        username:
+          type: string
+          example: admin
+        password:
+          type: string
+          format: password
+        dbType:
+          type: string
+          enum: [mysql, oracle, postgresql]
+        database:
+          type: string
+          description: Database name (MySQL/PostgreSQL) or Service Name (Oracle)
+
+    LoginResponse:
+      type: object
+      properties:
+        username:
+          type: string
+        host:
+          type: string
+        port:
+          type: integer
+        dbType:
+          type: string
+        database:
+          type: string
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        errorCode:
+          type: string
+        details:
+          type: object
+          additionalProperties:
+            type: string
+        timestamp:
+          type: integer
+          format: int64
+
+    Account:
+      type: object
+      properties:
+        username:
+          type: string
+        host:
+          type: string
+        status:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        passwordLifetime:
+          type: integer
+        isLocked:
+          type: boolean
+
+    AccountListResponse:
+      type: object
+      properties:
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Account'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    CreateAccountRequest:
+      type: object
+      required:
+        - username
+        - password
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+          format: password
+        host:
+          type: string
+          default: '%'
+        expireDays:
+          type: integer
+          default: 90
+        privileges:
+          type: array
+          items:
+            type: string
+
+    Permission:
+      type: object
+      properties:
+        privilege:
+          type: string
+        grantee:
+          type: string
+        grantor:
+          type: string
+        database:
+          type: string
+        table:
+          type: string
+        isGrantable:
+          type: boolean
+
+    GrantPermissionRequest:
+      type: object
+      required:
+        - username
+        - privileges
+      properties:
+        username:
+          type: string
+        host:
+          type: string
+          default: '%'
+        database:
+          type: string
+        table:
+          type: string
+        privileges:
+          type: array
+          items:
+            type: string
+
+    SessionInfo:
+      type: object
+      properties:
+        pid:
+          type: integer
+        user:
+          type: string
+        host:
+          type: string
+        database:
+          type: string
+        command:
+          type: string
+        time:
+          type: integer
+        state:
+          type: string
+        query:
+          type: string
+
+    QueryRequest:
+      type: object
+      required:
+        - query
+      properties:
+        query:
+          type: string
+        account:
+          type: string
+        limit:
+          type: integer
+          default: 1000
+        timeoutSeconds:
+          type: integer
+          default: 300
+
+    QueryResult:
+      type: object
+      properties:
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            type: array
+            items: {}
+        rowCount:
+          type: integer
+        executionTimeMs:
+          type: integer
+          format: int64
+        affectedRows:
+          type: integer
+        isSelectQuery:
+          type: boolean
+
+    DashboardStats:
+      type: object
+      properties:
+        totalAccounts:
+          type: integer
+        activeAccounts:
+          type: integer
+        lockedAccounts:
+          type: integer
+        expiringAccounts:
+          type: integer
+        activeSessions:
+          type: integer
+        slowQueries:
+          type: integer
+
+    Pagination:
+      type: object
+      properties:
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer

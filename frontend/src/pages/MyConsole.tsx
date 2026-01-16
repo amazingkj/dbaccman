@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react'
+import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
   Typography,
   Table,
@@ -33,8 +34,7 @@ function MyConsole() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<UserQueryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const textAreaRef = useRef<any>(null)
+  const textAreaRef = useRef<TextAreaRef>(null)
 
   const executeQuery = async () => {
     let queryToExecute = query

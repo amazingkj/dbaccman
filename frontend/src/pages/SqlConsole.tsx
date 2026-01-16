@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
+import type { TextAreaRef } from 'antd/es/input/TextArea'
 import {
   Typography,
   Table,
@@ -54,8 +55,7 @@ function SqlConsole() {
   const [schemaInfo, setSchemaInfo] = useState<SchemaInfo | null>(null)
   const [schemaLoading, setSchemaLoading] = useState(false)
   const [lastClearedQuery, setLastClearedQuery] = useState<string | null>(null)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const textAreaRef = useRef<any>(null)
+  const textAreaRef = useRef<TextAreaRef>(null)
 
   const getDbTypeColor = (dbType?: string) => {
     switch (dbType?.toUpperCase()) {

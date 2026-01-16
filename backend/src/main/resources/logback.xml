@@ -1,45 +1,84 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration>
+    <!-- Console appender with human-readable format -->
     <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- File appender with human-readable format -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/dbaccman.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/dbaccman.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- JSON file appender for structured logging (easy parsing) -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>logs/dbaccman-json.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>logs/dbaccman-json.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>2GB</totalSizeCap>
+        </rollingPolicy>
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <includeMdcKeyName>sessionId</includeMdcKeyName>
+            <includeMdcKeyName>userId</includeMdcKeyName>
+            <includeMdcKeyName>clientIp</includeMdcKeyName>
+            <includeMdcKeyName>action</includeMdcKeyName>
+            <customFields>{"application":"dbaccman"}</customFields>
+        </encoder>
+    </appender>
+
+    <!-- Audit log appender -->
     <appender name="AUDIT" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/audit.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/audit.%d{yyyy-MM-dd}.log</fileNamePattern>
             <maxHistory>90</maxHistory>
+            <totalSizeCap>5GB</totalSizeCap>
         </rollingPolicy>
         <encoder>
             <pattern>%d{yyyy-MM-dd HH:mm:ss} AUDIT - %msg%n</pattern>
         </encoder>
     </appender>
 
+    <!-- Async wrapper for JSON appender (performance) -->
+    <appender name="ASYNC_JSON" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="JSON_FILE"/>
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>false</includeCallerData>
+    </appender>
+
+    <!-- Application logs -->
     <logger name="com.dbaccman" level="DEBUG">
         <appender-ref ref="FILE"/>
+        <appender-ref ref="ASYNC_JSON"/>
     </logger>
+
+    <!-- Audit logs -->
     <logger name="com.dbaccman.util.AuditLogger" level="INFO" additivity="false">
         <appender-ref ref="AUDIT"/>
         <appender-ref ref="STDOUT"/>
     </logger>
-    <logger name="io.ktor" level="DEBUG"/>
-    <logger name="com.zaxxer.hikari" level="DEBUG"/>
 
-    <root level="DEBUG">
+    <!-- Framework logs -->
+    <logger name="io.ktor" level="INFO"/>
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+    <logger name="io.netty" level="WARN"/>
+
+    <!-- Root logger -->
+    <root level="INFO">
         <appender-ref ref="STDOUT"/>
         <appender-ref ref="FILE"/>
+        <appender-ref ref="ASYNC_JSON"/>
     </root>
 </configuration>

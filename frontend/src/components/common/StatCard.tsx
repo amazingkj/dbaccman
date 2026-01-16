@@ -9,7 +9,7 @@ export interface StatCardStyle {
 
 export interface StatCardProps {
   title: string
-  value: number
+  value: number | string
   style: StatCardStyle
   onClick?: () => void
   suffix?: string
@@ -44,7 +44,7 @@ function StatCardComponent({
       onClick={onClick}
       role={onClick ? 'button' : undefined}
       tabIndex={onClick ? 0 : undefined}
-      aria-label={`${title}: ${value.toLocaleString()}${suffix || ''}`}
+      aria-label={`${title}: ${typeof value === 'number' ? value.toLocaleString() : value}${suffix || ''}`}
       onKeyDown={(e) => {
         if (onClick && (e.key === 'Enter' || e.key === ' ')) {
           e.preventDefault()
@@ -108,7 +108,7 @@ function StatCardComponent({
             lineHeight: 1.2,
           }}
         >
-          {value.toLocaleString()}
+          {typeof value === 'number' ? value.toLocaleString() : value}
           {suffix && (
             <span style={{ fontSize: 14, marginLeft: 4, color: '#5a6a85' }}>
               {suffix}

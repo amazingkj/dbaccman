@@ -7,6 +7,7 @@ import com.dbaccman.model.GrantPermissionRequest
 import com.dbaccman.model.Permission
 import com.dbaccman.model.RevokePermissionRequest
 import com.dbaccman.util.AuditLogger
+import com.dbaccman.util.InputValidator
 
 class PermissionService {
 
@@ -152,6 +153,13 @@ class PermissionService {
     }
 
     fun grantPermission(sessionId: String, request: GrantPermissionRequest) {
+        // Validate inputs
+        InputValidator.validateIdentifier(request.username, "username")
+        InputValidator.validateHost(request.host)
+        InputValidator.validatePrivileges(request.privileges)
+        InputValidator.validateDatabaseName(request.database)
+        InputValidator.validateTableName(request.table)
+
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getGrantSql(
                 privileges = request.privileges,
@@ -198,6 +206,15 @@ class PermissionService {
     fun batchGrantPermissions(sessionId: String, requests: List<GrantPermissionRequest>): Pair<Int, List<String>> {
         if (requests.isEmpty()) return Pair(0, emptyList())
 
+        // Validate all requests before executing
+        requests.forEach { request ->
+            InputValidator.validateIdentifier(request.username, "username")
+            InputValidator.validateHost(request.host)
+            InputValidator.validatePrivileges(request.privileges)
+            InputValidator.validateDatabaseName(request.database)
+            InputValidator.validateTableName(request.table)
+        }
+
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             var successCount = 0
             val errors = mutableListOf<String>()
@@ -242,6 +259,13 @@ class PermissionService {
     }
 
     fun revokePermission(sessionId: String, request: RevokePermissionRequest) {
+        // Validate inputs
+        InputValidator.validateIdentifier(request.username, "username")
+        InputValidator.validateHost(request.host)
+        InputValidator.validatePrivileges(request.privileges)
+        InputValidator.validateDatabaseName(request.database)
+        InputValidator.validateTableName(request.table)
+
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val sql = dialect.getRevokeSql(
                 privileges = request.privileges,

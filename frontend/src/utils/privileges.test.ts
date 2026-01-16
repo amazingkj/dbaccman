@@ -5,6 +5,7 @@ import {
   getSystemPrivilegesForDbType,
   ORACLE_SYSTEM_PRIVILEGES,
   MYSQL_GLOBAL_PRIVILEGES,
+  MYSQL_ALL_GLOBAL_PRIVILEGES,
   POSTGRESQL_PRIVILEGES,
   ORACLE_OBJECT_PRIVILEGES,
   POSTGRESQL_TABLE_PRIVILEGES,
@@ -103,9 +104,11 @@ describe('getSystemPrivilegesForDbType', () => {
     expect(result.length).toBe(ORACLE_SYSTEM_PRIVILEGES.length)
   })
 
-  it('should return empty array for MySQL', () => {
+  it('should return MySQL global privileges for MySQL', () => {
     const result = getSystemPrivilegesForDbType('MYSQL')
-    expect(result).toEqual([])
+    expect(result).toEqual(MYSQL_ALL_GLOBAL_PRIVILEGES)
+    expect(result).toContain('SELECT')
+    expect(result).toContain('CREATE USER')
   })
 
   it('should return empty array for PostgreSQL', () => {

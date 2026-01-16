@@ -40,7 +40,9 @@ import { accountsApi } from '../api/accounts'
 import { permissionsApi } from '../api/permissions'
 import { formatToLocalTime } from '../utils/dateUtils'
 import { useAuthStore } from '../store/authStore'
-import { StatCard } from '../components/common/StatCard'
+import { StatCard, STAT_CARD_STYLES } from '../components/common/StatCard'
+import { SqlWarning } from '../components/common/SqlWarning'
+import { useFormValidation } from '../hooks/useInputValidation'
 import type { Account, CreateAccountRequest, ExpiringAccount, CloneAccountRequest, BatchOperationResult, PaginationInfo, AccountStats } from '../types'
 
 // Oracle system privileges for account creation
@@ -88,28 +90,12 @@ const getPrivilegesForDbType = (dbType: string | undefined) => {
 
 const { Title, Text } = Typography
 
-// Stat card style configurations
+// Stat card style configurations - using shared STAT_CARD_STYLES constants
 const statCardStyles = {
-  total: {
-    color: '#5d87ff',
-    bgColor: 'rgba(93, 135, 255, 0.1)',
-    icon: <TeamOutlined />,
-  },
-  locked: {
-    color: '#fa896b',
-    bgColor: 'rgba(250, 137, 107, 0.1)',
-    icon: <LockOutlined />,
-  },
-  expiring: {
-    color: '#ffae1f',
-    bgColor: 'rgba(255, 174, 31, 0.1)',
-    icon: <ClockCircleOutlined />,
-  },
-  active: {
-    color: '#13deb9',
-    bgColor: 'rgba(19, 222, 185, 0.1)',
-    icon: <UserOutlined />,
-  },
+  total: { ...STAT_CARD_STYLES.primary, icon: <TeamOutlined /> },
+  locked: { ...STAT_CARD_STYLES.danger, icon: <LockOutlined /> },
+  expiring: { ...STAT_CARD_STYLES.warning, icon: <ClockCircleOutlined /> },
+  active: { ...STAT_CARD_STYLES.success, icon: <UserOutlined /> },
 }
 
 // Oracle system users that should not be modified (moved outside component)
@@ -152,6 +138,11 @@ function Accounts() {
   const [passwordForm] = Form.useForm()
   const [cloneForm] = Form.useForm()
   const [searchText, setSearchText] = useState('')
+
+  // SQL injection validation
+  const createFormValidation = useFormValidation()
+  const passwordFormValidation = useFormValidation()
+  const cloneFormValidation = useFormValidation()
   const [searchColumn, setSearchColumn] = useState<string>('all')
 
   // Pagination state
@@ -788,15 +779,24 @@ function Accounts() {
         width={hasPrivilegeOptions ? 550 : 420}
       >
         <Form form={form} layout="vertical" onFinish={handleCreate}>
+          <SqlWarning validation={createFormValidation.getFieldValidation('username')} />
+          <SqlWarning validation={createFormValidation.getFieldValidation('password')} />
           <Form.Item
             name="username"
             label="Username"
             rules={[{ required: true, message: 'Please enter username' }]}
+            validateStatus={createFormValidation.getFieldValidation('username')?.severity === 'danger' ? 'error' : undefined}
           >
-            <Input placeholder="Enter username" />
+            <Input
+              placeholder="Enter username"
+              onChange={(e) => createFormValidation.validateField('username', e.target.value, 'identifier')}
+            />
           </Form.Item>
           <Form.Item name="host" label="Host" initialValue="%">
-            <Input placeholder="Enter host (default: %)" />
+            <Input
+              placeholder="Enter host (default: %)"
+              onChange={(e) => createFormValidation.validateField('host', e.target.value, 'identifier')}
+            />
           </Form.Item>
           <Form.Item
             name="password"
@@ -805,8 +805,12 @@ function Accounts() {
               { required: true, message: 'Please enter password' },
               { min: 8, message: 'Password must be at least 8 characters' },
             ]}
+            validateStatus={createFormValidation.getFieldValidation('password')?.severity === 'danger' ? 'error' : undefined}
           >
-            <Input.Password placeholder="Enter password" />
+            <Input.Password
+              placeholder="Enter password"
+              onChange={(e) => createFormValidation.validateField('password', e.target.value, 'password')}
+            />
           </Form.Item>
           <Form.Item
             name="expireDays"
@@ -843,10 +847,17 @@ function Accounts() {
 
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit">
+              <Button
+                type="primary"
+                htmlType="submit"
+                disabled={createFormValidation.hasAnyDanger}
+              >
                 Create
               </Button>
-              <Button onClick={() => setCreateModalOpen(false)}>Cancel</Button>
+              <Button onClick={() => {
+                setCreateModalOpen(false)
+                createFormValidation.clearAllValidations()
+              }}>Cancel</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -860,10 +871,12 @@ function Accounts() {
           setPasswordModalOpen(false)
           passwordForm.resetFields()
           setSelectedAccount(null)
+          passwordFormValidation.clearAllValidations()
         }}
         footer={null}
       >
         <Form form={passwordForm} layout="vertical" onFinish={handleChangePassword}>
+          <SqlWarning validation={passwordFormValidation.getFieldValidation('password')} />
           <Form.Item
             name="password"
             label="New Password"
@@ -871,8 +884,12 @@ function Accounts() {
               { required: true, message: 'Please enter new password' },
               { min: 8, message: 'Password must be at least 8 characters' },
             ]}
+            validateStatus={passwordFormValidation.getFieldValidation('password')?.severity === 'danger' ? 'error' : undefined}
           >
-            <Input.Password placeholder="Enter new password" />
+            <Input.Password
+              placeholder="Enter new password"
+              onChange={(e) => passwordFormValidation.validateField('password', e.target.value, 'password')}
+            />
           </Form.Item>
           <Form.Item
             name="confirmPassword"
@@ -894,10 +911,17 @@ function Accounts() {
           </Form.Item>
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit">
+              <Button
+                type="primary"
+                htmlType="submit"
+                disabled={passwordFormValidation.hasAnyDanger}
+              >
                 Change Password
               </Button>
-              <Button onClick={() => setPasswordModalOpen(false)}>Cancel</Button>
+              <Button onClick={() => {
+                setPasswordModalOpen(false)
+                passwordFormValidation.clearAllValidations()
+              }}>Cancel</Button>
             </Space>
           </Form.Item>
         </Form>
@@ -911,11 +935,14 @@ function Accounts() {
           setCloneModalOpen(false)
           cloneForm.resetFields()
           setSelectedAccount(null)
+          cloneFormValidation.clearAllValidations()
         }}
         footer={null}
         width={500}
       >
         <Form form={cloneForm} layout="vertical" onFinish={handleClone}>
+          <SqlWarning validation={cloneFormValidation.getFieldValidation('newUsername')} />
+          <SqlWarning validation={cloneFormValidation.getFieldValidation('newPassword')} />
           <Form.Item name="sourceUsername" hidden>
             <Input />
           </Form.Item>
@@ -926,11 +953,18 @@ function Accounts() {
             name="newUsername"
             label="New Username"
             rules={[{ required: true, message: 'Please enter new username' }]}
+            validateStatus={cloneFormValidation.getFieldValidation('newUsername')?.severity === 'danger' ? 'error' : undefined}
           >
-            <Input placeholder="Enter new username" />
+            <Input
+              placeholder="Enter new username"
+              onChange={(e) => cloneFormValidation.validateField('newUsername', e.target.value, 'identifier')}
+            />
           </Form.Item>
           <Form.Item name="newHost" label="Host" initialValue="%">
-            <Input placeholder="Enter host (default: %)" />
+            <Input
+              placeholder="Enter host (default: %)"
+              onChange={(e) => cloneFormValidation.validateField('newHost', e.target.value, 'identifier')}
+            />
           </Form.Item>
           <Form.Item
             name="newPassword"
@@ -939,8 +973,12 @@ function Accounts() {
               { required: true, message: 'Please enter password' },
               { min: 8, message: 'Password must be at least 8 characters' },
             ]}
+            validateStatus={cloneFormValidation.getFieldValidation('newPassword')?.severity === 'danger' ? 'error' : undefined}
           >
-            <Input.Password placeholder="Enter password" />
+            <Input.Password
+              placeholder="Enter password"
+              onChange={(e) => cloneFormValidation.validateField('newPassword', e.target.value, 'password')}
+            />
           </Form.Item>
           <Form.Item name="copyPermissions" valuePropName="checked" initialValue={true}>
             <Checkbox>Copy permissions from source account</Checkbox>
@@ -954,10 +992,18 @@ function Accounts() {
           </Form.Item>
           <Form.Item>
             <Space>
-              <Button type="primary" htmlType="submit" icon={<CopyOutlined />}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                icon={<CopyOutlined />}
+                disabled={cloneFormValidation.hasAnyDanger}
+              >
                 Clone Account
               </Button>
-              <Button onClick={() => setCloneModalOpen(false)}>Cancel</Button>
+              <Button onClick={() => {
+                setCloneModalOpen(false)
+                cloneFormValidation.clearAllValidations()
+              }}>Cancel</Button>
             </Space>
           </Form.Item>
         </Form>

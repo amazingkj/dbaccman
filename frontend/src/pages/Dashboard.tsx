@@ -9,7 +9,6 @@ import {
   Tag,
   Space,
   Button,
-  Spin,
   Progress,
 } from 'antd'
 import {
@@ -30,54 +29,24 @@ import {
 } from '@ant-design/icons'
 import { useAuthStore } from '../store/authStore'
 import { dashboardApi } from '../api/dashboard'
-import { StatCard } from '../components/common/StatCard'
+import { StatCard, STAT_CARD_STYLES } from '../components/common/StatCard'
+import { PageLoading } from '../components/common/PageLoading'
 import { handleApiError } from '../utils/errors'
 import UserDashboard from './UserDashboard'
 import type { DashboardStats } from '../types'
 
 const { Title, Text } = Typography
 
-// Stat card style configurations
+// Stat card style configurations - using shared STAT_CARD_STYLES constants
 const statCardStyles = {
-  accounts: {
-    color: '#5d87ff',
-    bgColor: 'rgba(93, 135, 255, 0.1)',
-    icon: <UserOutlined />,
-  },
-  sessions: {
-    color: '#49beff',
-    bgColor: 'rgba(73, 190, 255, 0.1)',
-    icon: <ThunderboltOutlined />,
-  },
-  expiring: {
-    color: '#ffae1f',
-    bgColor: 'rgba(255, 174, 31, 0.1)',
-    icon: <WarningOutlined />,
-  },
-  locked: {
-    color: '#ff6b6b',
-    bgColor: 'rgba(255, 107, 107, 0.1)',
-    icon: <LockOutlined />,
-  },
-  slowQueries: {
-    color: '#fa896b',
-    bgColor: 'rgba(250, 137, 107, 0.1)',
-    icon: <ClockCircleOutlined />,
-  },
-  storage: {
-    color: '#845ef7',
-    bgColor: 'rgba(132, 94, 247, 0.1)',
-    icon: <HddOutlined />,
-  },
-  databases: {
-    color: '#13deb9',
-    bgColor: 'rgba(19, 222, 185, 0.1)',
-    icon: <DatabaseOutlined />,
-  },
-  tables: {
-    color: '#5d87ff',
-    bgColor: 'rgba(93, 135, 255, 0.1)',
-    icon: <TableOutlined />,
+  accounts: { ...STAT_CARD_STYLES.primary, icon: <UserOutlined /> },
+  sessions: { ...STAT_CARD_STYLES.info, icon: <ThunderboltOutlined /> },
+  expiring: { ...STAT_CARD_STYLES.warning, icon: <WarningOutlined /> },
+  locked: { ...STAT_CARD_STYLES.red, icon: <LockOutlined /> },
+  slowQueries: { ...STAT_CARD_STYLES.danger, icon: <ClockCircleOutlined /> },
+  storage: { ...STAT_CARD_STYLES.purple, icon: <HddOutlined /> },
+  databases: { ...STAT_CARD_STYLES.success, icon: <DatabaseOutlined /> },
+  tables: { ...STAT_CARD_STYLES.primary, icon: <TableOutlined />,
   },
 }
 
@@ -111,12 +80,7 @@ function AdminDashboard() {
   }, [])
 
   if (loading || !stats) {
-    return (
-      <div style={{ textAlign: 'center', padding: '100px 0' }}>
-        <Spin size="large" />
-        <p style={{ marginTop: 16, color: '#8c8c8c' }}>Loading dashboard...</p>
-      </div>
-    )
+    return <PageLoading message="Loading dashboard..." type="cards" />
   }
 
   // Use backend health score

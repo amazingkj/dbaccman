@@ -88,6 +88,7 @@ fun Route.authRoutes() {
                 call.respond(
                     ConnectionLoginResponse(
                         token = token,  // Keep for backward compatibility during transition
+                        sessionId = sessionId,
                         username = request.username,
                         role = role,
                         host = request.host,

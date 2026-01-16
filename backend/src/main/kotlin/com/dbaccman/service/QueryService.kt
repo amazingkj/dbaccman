@@ -28,6 +28,10 @@ class QueryService {
         private const val DEFAULT_ROWS = 1000
         private const val MAX_ROWS = 50000
 
+        // Query timeout in seconds (5 minutes default)
+        private const val DEFAULT_QUERY_TIMEOUT_SECONDS = 300
+        private const val MAX_QUERY_TIMEOUT_SECONDS = 600  // 10 minutes max
+
         // Dangerous operations that are not allowed
         private val DANGEROUS_PATTERNS = listOf(
             Regex("^\\s*DROP\\s+DATABASE", RegexOption.IGNORE_CASE),
@@ -47,9 +51,11 @@ class QueryService {
         account: String?,
         username: String,
         ipAddress: String?,
-        limit: Int? = null
+        limit: Int? = null,
+        timeoutSeconds: Int? = null
     ): QueryResult {
         val rowLimit = (limit ?: DEFAULT_ROWS).coerceIn(1, MAX_ROWS)
+        val queryTimeout = (timeoutSeconds ?: DEFAULT_QUERY_TIMEOUT_SECONDS).coerceIn(1, MAX_QUERY_TIMEOUT_SECONDS)
         // Validate query
         validateQuery(query)
 
@@ -88,6 +94,7 @@ class QueryService {
 
                     if (isSelect) {
                         conn.createStatement().use { stmt ->
+                            stmt.queryTimeout = queryTimeout
                             stmt.maxRows = rowLimit
                             stmt.executeQuery(trimmedQuery).use { rs ->
                                 val metaData = rs.metaData
@@ -147,6 +154,7 @@ class QueryService {
                         }
                     } else {
                         conn.createStatement().use { stmt ->
+                            stmt.queryTimeout = queryTimeout
                             val affectedRows = stmt.executeUpdate(trimmedQuery)
                             val executionTime = System.currentTimeMillis() - startTime
 
@@ -179,6 +187,7 @@ class QueryService {
                             val isSelect = isSelectQuery(stmt)
                             if (isSelect) {
                                 conn.createStatement().use { s ->
+                                    s.queryTimeout = queryTimeout
                                     s.maxRows = rowLimit
                                     s.executeQuery(stmt).use { rs ->
                                         var rowCount = 0
@@ -188,6 +197,7 @@ class QueryService {
                                 }
                             } else {
                                 conn.createStatement().use { s ->
+                                    s.queryTimeout = queryTimeout
                                     val affected = s.executeUpdate(stmt)
                                     totalAffectedRows += affected
                                     results.add("Statement ${index + 1}: $affected rows affected")

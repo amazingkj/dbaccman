@@ -1,11 +1,13 @@
 /**
- * In-memory cache utility with TTL support and request deduplication.
+ * In-memory cache utility with TTL support, request deduplication,
+ * and tag-based invalidation for cache coherence.
  * Used for caching API responses to reduce unnecessary network requests.
  */
 
 interface CacheEntry<T> {
   data: T
   expiry: number
+  tags: string[]
 }
 
 class ApiCache {
@@ -28,12 +30,13 @@ class ApiCache {
   }
 
   /**
-   * Set cache with TTL (in milliseconds).
+   * Set cache with TTL (in milliseconds) and optional tags for grouped invalidation.
    */
-  set<T>(key: string, data: T, ttlMs: number): void {
+  set<T>(key: string, data: T, ttlMs: number, tags: string[] = []): void {
     this.cache.set(key, {
       data,
       expiry: Date.now() + ttlMs,
+      tags,
     })
   }
 
@@ -44,7 +47,8 @@ class ApiCache {
   async getOrFetch<T>(
     key: string,
     fetcher: () => Promise<T>,
-    ttlMs: number
+    ttlMs: number,
+    tags: string[] = []
   ): Promise<T> {
     // Check cache first
     const cached = this.get<T>(key)
@@ -59,7 +63,7 @@ class ApiCache {
     // Make new request
     const request = fetcher()
       .then((data) => {
-        this.set(key, data, ttlMs)
+        this.set(key, data, ttlMs, tags)
         this.pendingRequests.delete(key)
         return data
       })
@@ -98,6 +102,29 @@ class ApiCache {
   }
 
   /**
+   * Invalidate all entries with a specific tag.
+   * Useful for invalidating related data when an entity changes.
+   */
+  invalidateByTag(tag: string): void {
+    for (const [key, entry] of this.cache.entries()) {
+      if (entry.tags.includes(tag)) {
+        this.cache.delete(key)
+      }
+    }
+  }
+
+  /**
+   * Invalidate all entries with any of the specified tags.
+   */
+  invalidateByTags(tags: string[]): void {
+    for (const [key, entry] of this.cache.entries()) {
+      if (tags.some(tag => entry.tags.includes(tag))) {
+        this.cache.delete(key)
+      }
+    }
+  }
+
+  /**
    * Clear all cache.
    */
   clear(): void {
@@ -107,10 +134,11 @@ class ApiCache {
   /**
    * Get cache statistics for debugging.
    */
-  getStats(): { cacheSize: number; pendingRequests: number } {
+  getStats(): { cacheSize: number; pendingRequests: number; keys: string[] } {
     return {
       cacheSize: this.cache.size,
       pendingRequests: this.pendingRequests.size,
+      keys: Array.from(this.cache.keys()),
     }
   }
 }
@@ -137,4 +165,51 @@ export const CACHE_KEYS = {
   ROLES: 'roles:list',
   COMMON_ROLES: 'roles:common',
   PDBS: 'pdbs:list',
+  ACCOUNTS: 'accounts:list',
+  ACCOUNTS_PAGINATED: (page: number, pageSize: number) => `accounts:page:${page}:${pageSize}`,
+  PERMISSIONS: (username: string, host: string) => `permissions:${username}@${host}`,
+  SESSIONS: 'sessions:active',
+}
+
+// Cache tags for grouped invalidation
+export const CACHE_TAGS = {
+  ACCOUNTS: 'accounts',
+  PERMISSIONS: 'permissions',
+  SESSIONS: 'sessions',
+  DATABASES: 'databases',
+  TABLES: 'tables',
+  TABLESPACES: 'tablespaces',
+  DASHBOARD: 'dashboard',
+  ROLES: 'roles',
+}
+
+/**
+ * Event-based cache invalidation mapping.
+ * Maps WebSocket event types to cache tags that should be invalidated.
+ */
+export const EVENT_CACHE_INVALIDATION: Record<string, string[]> = {
+  // Account events invalidate accounts and dashboard
+  ACCOUNT_CREATED: [CACHE_TAGS.ACCOUNTS, CACHE_TAGS.DASHBOARD],
+  ACCOUNT_DELETED: [CACHE_TAGS.ACCOUNTS, CACHE_TAGS.DASHBOARD, CACHE_TAGS.PERMISSIONS],
+  ACCOUNT_UPDATED: [CACHE_TAGS.ACCOUNTS],
+  ACCOUNT_LOCKED: [CACHE_TAGS.ACCOUNTS, CACHE_TAGS.DASHBOARD],
+  ACCOUNT_UNLOCKED: [CACHE_TAGS.ACCOUNTS, CACHE_TAGS.DASHBOARD],
+
+  // Permission events
+  PERMISSION_GRANTED: [CACHE_TAGS.PERMISSIONS],
+  PERMISSION_REVOKED: [CACHE_TAGS.PERMISSIONS],
+
+  // Session events
+  DB_SESSION_STARTED: [CACHE_TAGS.SESSIONS, CACHE_TAGS.DASHBOARD],
+  DB_SESSION_KILLED: [CACHE_TAGS.SESSIONS, CACHE_TAGS.DASHBOARD],
+}
+
+/**
+ * Invalidate cache based on WebSocket event type.
+ */
+export function invalidateCacheForEvent(eventType: string): void {
+  const tagsToInvalidate = EVENT_CACHE_INVALIDATION[eventType]
+  if (tagsToInvalidate) {
+    apiCache.invalidateByTags(tagsToInvalidate)
+  }
 }

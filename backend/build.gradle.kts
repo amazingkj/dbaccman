@@ -36,6 +36,11 @@ dependencies {
     implementation("io.ktor:ktor-server-status-pages:$ktorVersion")
     implementation("io.ktor:ktor-server-call-logging:$ktorVersion")
     implementation("io.ktor:ktor-server-compression:$ktorVersion")
+    implementation("io.ktor:ktor-server-swagger:$ktorVersion")
+    implementation("io.ktor:ktor-server-openapi:$ktorVersion")
+    implementation("io.ktor:ktor-server-metrics-micrometer:$ktorVersion")
+    implementation("io.micrometer:micrometer-registry-prometheus:1.12.1")
+    implementation("io.ktor:ktor-server-websockets:$ktorVersion")
 
     // Database Drivers
     implementation("mysql:mysql-connector-java:$mysqlVersion")
@@ -45,6 +50,7 @@ dependencies {
 
     // Logging
     implementation("ch.qos.logback:logback-classic:$logbackVersion")
+    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
 
     // Testing
     testImplementation("io.ktor:ktor-server-tests:$ktorVersion")

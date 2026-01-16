@@ -2,6 +2,21 @@ import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios'
 import { message } from 'antd'
 import { useAuthStore } from '../store/authStore'
 
+// Debounced activity update - only update once per 30 seconds
+let lastActivityUpdate = 0
+const ACTIVITY_UPDATE_INTERVAL = 30 * 1000 // 30 seconds
+
+function debouncedUpdateActivity(): void {
+  const now = Date.now()
+  if (now - lastActivityUpdate >= ACTIVITY_UPDATE_INTERVAL) {
+    lastActivityUpdate = now
+    const { isAuthenticated, updateLastActivity } = useAuthStore.getState()
+    if (isAuthenticated) {
+      updateLastActivity()
+    }
+  }
+}
+
 const apiClient = axios.create({
   baseURL: '/api',
   withCredentials: true,  // Send cookies with requests
@@ -59,11 +74,8 @@ apiClient.interceptors.request.use(
 // Response interceptor - Handle auth errors and refresh session
 apiClient.interceptors.response.use(
   (response) => {
-    // Refresh session timeout on successful API calls
-    const { isAuthenticated, updateLastActivity } = useAuthStore.getState()
-    if (isAuthenticated) {
-      updateLastActivity()
-    }
+    // Refresh session timeout on successful API calls (debounced)
+    debouncedUpdateActivity()
     return response
   },
   (error: AxiosError) => {

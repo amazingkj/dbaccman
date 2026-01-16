@@ -1,23 +1,32 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { Modal, Typography, Progress } from 'antd'
 import { ClockCircleOutlined } from '@ant-design/icons'
-import { useAuthStore, SESSION_TIMEOUT_MS, SESSION_WARNING_MS } from '../../store/authStore'
+import { useAuthStore } from '../../store/authStore'
+import { useSettingsStore, getSessionTimeoutMs, getSessionWarningMs } from '../../store/settingsStore'
 import { useAuth } from '../../hooks/useAuth'
 
 const { Text } = Typography
 
 function SessionTimeout() {
   const { isAuthenticated, lastActivity, updateLastActivity } = useAuthStore()
+  const { sessionTimeoutMinutes, sessionWarningMinutes, autoLogoutOnTimeout } = useSettingsStore()
   const { logout } = useAuth()
   const [showWarning, setShowWarning] = useState(false)
   const [remainingTime, setRemainingTime] = useState(0)
 
-  // Session is now refreshed only on API calls (via axios interceptor)
-  // No passive event listeners needed
+  // Calculate timeout values from settings
+  const sessionTimeoutMs = useMemo(
+    () => getSessionTimeoutMs(sessionTimeoutMinutes),
+    [sessionTimeoutMinutes]
+  )
+  const sessionWarningMs = useMemo(
+    () => getSessionWarningMs(sessionWarningMinutes),
+    [sessionWarningMinutes]
+  )
 
   // Check session timeout
   useEffect(() => {
-    if (!isAuthenticated) {
+    if (!isAuthenticated || !autoLogoutOnTimeout) {
       setShowWarning(false)
       return
     }
@@ -25,13 +34,13 @@ function SessionTimeout() {
     const checkTimeout = () => {
       const now = Date.now()
       const elapsed = now - lastActivity
-      const remaining = SESSION_TIMEOUT_MS - elapsed
+      const remaining = sessionTimeoutMs - elapsed
 
       if (remaining <= 0) {
         // Session expired
         setShowWarning(false)
         logout()
-      } else if (remaining <= SESSION_WARNING_MS) {
+      } else if (remaining <= sessionWarningMs) {
         // Show warning
         setShowWarning(true)
         setRemainingTime(Math.ceil(remaining / 1000))
@@ -45,7 +54,7 @@ function SessionTimeout() {
     checkTimeout()
 
     return () => clearInterval(interval)
-  }, [isAuthenticated, lastActivity, logout])
+  }, [isAuthenticated, lastActivity, logout, sessionTimeoutMs, sessionWarningMs, autoLogoutOnTimeout])
 
   // Continue session
   const handleContinue = () => {
@@ -66,7 +75,7 @@ function SessionTimeout() {
     return `${mins}:${secs.toString().padStart(2, '0')}`
   }
 
-  const warningProgress = Math.round((remainingTime / (SESSION_WARNING_MS / 1000)) * 100)
+  const warningProgress = Math.round((remainingTime / (sessionWarningMs / 1000)) * 100)
 
   return (
     <Modal

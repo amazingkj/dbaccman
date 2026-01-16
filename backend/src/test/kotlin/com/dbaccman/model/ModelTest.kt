@@ -852,6 +852,7 @@ class ModelTest {
         fun testConnectionLoginResponseProperties() {
             val response = ConnectionLoginResponse(
                 token = "jwt-token",
+                sessionId = "test-session-id",
                 username = "admin",
                 role = "DBA",
                 host = "localhost",
@@ -861,6 +862,7 @@ class ModelTest {
             )
 
             assertEquals("jwt-token", response.token)
+            assertEquals("test-session-id", response.sessionId)
             assertEquals("admin", response.username)
             assertEquals("DBA", response.role)
             assertEquals("localhost", response.host)

@@ -9,6 +9,9 @@ import com.dbaccman.dialect.OracleDialect
 import com.dbaccman.dialect.PostgreSQLDialect
 import com.dbaccman.model.*
 import com.dbaccman.util.AuditLogger
+import com.dbaccman.util.InputValidator
+import com.dbaccman.websocket.EventBroadcaster
+import com.dbaccman.websocket.EventType
 import kotlinx.coroutines.*
 import org.slf4j.LoggerFactory
 import java.sql.ResultSet
@@ -16,6 +19,20 @@ import java.sql.SQLException
 
 class AccountService {
     private val logger = LoggerFactory.getLogger(AccountService::class.java)
+    private val eventScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /**
+     * Broadcast an event asynchronously (fire-and-forget).
+     */
+    private fun broadcastEvent(type: EventType, data: Map<String, String>? = null) {
+        eventScope.launch {
+            try {
+                EventBroadcaster.broadcast(type, data)
+            } catch (e: Exception) {
+                logger.warn("Failed to broadcast event $type: ${e.message}")
+            }
+        }
+    }
 
     /**
      * Build ORDER BY clause based on sort parameters
@@ -206,9 +223,15 @@ class AccountService {
     }
 
     fun createAccount(sessionId: String, request: CreateAccountRequest): Account {
+        // Validate inputs before SQL generation
+        InputValidator.validateIdentifier(request.username, "username")
+        InputValidator.validateHost(request.host)
+        InputValidator.validatePassword(request.password)
+        InputValidator.validateExpireDays(request.expireDays)
+
         return useOracleScriptContext(sessionId) { conn, dialect ->
             val createSql = dialect.getCreateUserSql(request.username, request.host, request.password)
-            logger.info("Creating user with SQL: $createSql")
+            logger.info("Creating user with SQL: ${InputValidator.sanitizeForLogging(createSql)}")
 
             try {
                 // 1. Create user
@@ -290,6 +313,12 @@ class AccountService {
 
             AuditLogger.log("CREATE_ACCOUNT", "Created account ${request.username}@${request.host}")
 
+            // Broadcast account created event
+            broadcastEvent(EventType.ACCOUNT_CREATED, mapOf(
+                "username" to request.username,
+                "host" to request.host
+            ))
+
             Account(
                 username = request.username,
                 host = request.host,
@@ -299,6 +328,11 @@ class AccountService {
     }
 
     fun changePassword(sessionId: String, username: String, host: String, newPassword: String, expireImmediately: Boolean = false) {
+        // Validate inputs
+        InputValidator.validateIdentifier(username, "username")
+        InputValidator.validateHost(host)
+        InputValidator.validatePassword(newPassword)
+
         useOracleScriptContext(sessionId) { conn, dialect ->
             try {
                 val sql = dialect.getAlterUserPasswordSql(username, host, newPassword)
@@ -325,6 +359,10 @@ class AccountService {
     }
 
     fun deleteAccount(sessionId: String, username: String, host: String) {
+        // Validate inputs
+        InputValidator.validateIdentifier(username, "username")
+        InputValidator.validateHost(host)
+
         useOracleScriptContext(sessionId) { conn, dialect ->
             try {
                 val sql = dialect.getDropUserSql(username, host)
@@ -340,10 +378,20 @@ class AccountService {
             }
 
             AuditLogger.log("DELETE_ACCOUNT", "Deleted account $username@$host")
+
+            // Broadcast account deleted event
+            broadcastEvent(EventType.ACCOUNT_DELETED, mapOf(
+                "username" to username,
+                "host" to host
+            ))
         }
     }
 
     fun unlockAccount(sessionId: String, username: String, host: String) {
+        // Validate inputs
+        InputValidator.validateIdentifier(username, "username")
+        InputValidator.validateHost(host)
+
         useOracleScriptContext(sessionId) { conn, dialect ->
             try {
                 val sql = dialect.getUnlockAccountSql(username, host)
@@ -359,6 +407,12 @@ class AccountService {
             }
 
             AuditLogger.log("UNLOCK_ACCOUNT", "Unlocked account $username@$host")
+
+            // Broadcast account unlocked event
+            broadcastEvent(EventType.ACCOUNT_UNLOCKED, mapOf(
+                "username" to username,
+                "host" to host
+            ))
         }
     }
 
@@ -414,6 +468,12 @@ class AccountService {
     }
 
     fun setDefaultTablespace(sessionId: String, username: String, host: String, tablespace: String, quota: String? = null) {
+        // Validate inputs
+        InputValidator.validateIdentifier(username, "username")
+        InputValidator.validateHost(host)
+        InputValidator.validateIdentifier(tablespace, "tablespace")
+        quota?.let { InputValidator.validateQuota(it) }
+
         useOracleScriptContext(sessionId) { conn, dialect ->
             // Set default tablespace
             val setDefaultSql = dialect.getSetDefaultTablespaceSql(username, host, tablespace)
