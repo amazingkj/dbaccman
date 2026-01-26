@@ -77,7 +77,7 @@ function AdminDashboard() {
 
   useEffect(() => {
     fetchDashboardData()
-  }, [])
+  }, [fetchDashboardData])
 
   if (loading || !stats) {
     return <PageLoading message="Loading dashboard..." type="cards" />

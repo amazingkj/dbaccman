@@ -99,7 +99,7 @@ describe('useAsync', () => {
 
     it('should return data on success', async () => {
       const testData = 'success'
-      const asyncFn = vi.fn().mockResolvedValue(testData)
+      const asyncFn = vi.fn((): Promise<string> => Promise.resolve(testData))
 
       const { result } = renderHook(() => useAsync(asyncFn))
 

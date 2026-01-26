@@ -250,14 +250,18 @@ class MySQLDialect : DatabaseDialect {
     /**
      * Get global privileges for a specific user from mysql.user table.
      * MySQL stores global privileges as Y/N columns, so we need to unpivot them.
+     * Optimized: Filter user first in subquery, then cross join with privilege list.
      */
     fun getGlobalPrivilegesQuery(): String = """
         SELECT
-            CONCAT("'", user, "'@'", host, "'") as grantee,
+            CONCAT("'", u.user, "'@'", u.host, "'") as grantee,
             '*' as db,
             privilege,
-            CASE WHEN Grant_priv = 'Y' THEN 'YES' ELSE 'NO' END as is_grantable
-        FROM mysql.user
+            CASE WHEN u.Grant_priv = 'Y' THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM (
+            SELECT * FROM mysql.user
+            WHERE CONCAT("'", user, "'@'", host, "'") = ?
+        ) u
         CROSS JOIN (
             SELECT 'SELECT' as privilege UNION ALL
             SELECT 'INSERT' UNION ALL
@@ -288,36 +292,35 @@ class MySQLDialect : DatabaseDialect {
             SELECT 'TRIGGER' UNION ALL
             SELECT 'CREATE TABLESPACE'
         ) privs
-        WHERE CONCAT("'", user, "'@'", host, "'") = ?
-        AND CASE privilege
-            WHEN 'SELECT' THEN Select_priv
-            WHEN 'INSERT' THEN Insert_priv
-            WHEN 'UPDATE' THEN Update_priv
-            WHEN 'DELETE' THEN Delete_priv
-            WHEN 'CREATE' THEN Create_priv
-            WHEN 'DROP' THEN Drop_priv
-            WHEN 'RELOAD' THEN Reload_priv
-            WHEN 'SHUTDOWN' THEN Shutdown_priv
-            WHEN 'PROCESS' THEN Process_priv
-            WHEN 'FILE' THEN File_priv
-            WHEN 'REFERENCES' THEN References_priv
-            WHEN 'INDEX' THEN Index_priv
-            WHEN 'ALTER' THEN Alter_priv
-            WHEN 'SHOW DATABASES' THEN Show_db_priv
-            WHEN 'SUPER' THEN Super_priv
-            WHEN 'CREATE TEMPORARY TABLES' THEN Create_tmp_table_priv
-            WHEN 'LOCK TABLES' THEN Lock_tables_priv
-            WHEN 'EXECUTE' THEN Execute_priv
-            WHEN 'REPLICATION SLAVE' THEN Repl_slave_priv
-            WHEN 'REPLICATION CLIENT' THEN Repl_client_priv
-            WHEN 'CREATE VIEW' THEN Create_view_priv
-            WHEN 'SHOW VIEW' THEN Show_view_priv
-            WHEN 'CREATE ROUTINE' THEN Create_routine_priv
-            WHEN 'ALTER ROUTINE' THEN Alter_routine_priv
-            WHEN 'CREATE USER' THEN Create_user_priv
-            WHEN 'EVENT' THEN Event_priv
-            WHEN 'TRIGGER' THEN Trigger_priv
-            WHEN 'CREATE TABLESPACE' THEN Create_tablespace_priv
+        WHERE CASE privilege
+            WHEN 'SELECT' THEN u.Select_priv
+            WHEN 'INSERT' THEN u.Insert_priv
+            WHEN 'UPDATE' THEN u.Update_priv
+            WHEN 'DELETE' THEN u.Delete_priv
+            WHEN 'CREATE' THEN u.Create_priv
+            WHEN 'DROP' THEN u.Drop_priv
+            WHEN 'RELOAD' THEN u.Reload_priv
+            WHEN 'SHUTDOWN' THEN u.Shutdown_priv
+            WHEN 'PROCESS' THEN u.Process_priv
+            WHEN 'FILE' THEN u.File_priv
+            WHEN 'REFERENCES' THEN u.References_priv
+            WHEN 'INDEX' THEN u.Index_priv
+            WHEN 'ALTER' THEN u.Alter_priv
+            WHEN 'SHOW DATABASES' THEN u.Show_db_priv
+            WHEN 'SUPER' THEN u.Super_priv
+            WHEN 'CREATE TEMPORARY TABLES' THEN u.Create_tmp_table_priv
+            WHEN 'LOCK TABLES' THEN u.Lock_tables_priv
+            WHEN 'EXECUTE' THEN u.Execute_priv
+            WHEN 'REPLICATION SLAVE' THEN u.Repl_slave_priv
+            WHEN 'REPLICATION CLIENT' THEN u.Repl_client_priv
+            WHEN 'CREATE VIEW' THEN u.Create_view_priv
+            WHEN 'SHOW VIEW' THEN u.Show_view_priv
+            WHEN 'CREATE ROUTINE' THEN u.Create_routine_priv
+            WHEN 'ALTER ROUTINE' THEN u.Alter_routine_priv
+            WHEN 'CREATE USER' THEN u.Create_user_priv
+            WHEN 'EVENT' THEN u.Event_priv
+            WHEN 'TRIGGER' THEN u.Trigger_priv
+            WHEN 'CREATE TABLESPACE' THEN u.Create_tablespace_priv
             ELSE 'N'
         END = 'Y'
         ORDER BY privilege
@@ -325,14 +328,18 @@ class MySQLDialect : DatabaseDialect {
 
     /**
      * Get all global privileges for all users from mysql.user table.
+     * Optimized: Filter system users first in subquery, then cross join with privilege list.
      */
     fun getAllGlobalPrivilegesQuery(): String = """
         SELECT
-            CONCAT("'", user, "'@'", host, "'") as grantee,
+            CONCAT("'", u.user, "'@'", u.host, "'") as grantee,
             '*' as db,
             privilege,
-            CASE WHEN Grant_priv = 'Y' THEN 'YES' ELSE 'NO' END as is_grantable
-        FROM mysql.user
+            CASE WHEN u.Grant_priv = 'Y' THEN 'YES' ELSE 'NO' END as is_grantable
+        FROM (
+            SELECT * FROM mysql.user
+            WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
+        ) u
         CROSS JOIN (
             SELECT 'SELECT' as privilege UNION ALL
             SELECT 'INSERT' UNION ALL
@@ -363,36 +370,35 @@ class MySQLDialect : DatabaseDialect {
             SELECT 'TRIGGER' UNION ALL
             SELECT 'CREATE TABLESPACE'
         ) privs
-        WHERE user NOT IN (${getSystemUsers().joinToString { "'$it'" }})
-        AND CASE privilege
-            WHEN 'SELECT' THEN Select_priv
-            WHEN 'INSERT' THEN Insert_priv
-            WHEN 'UPDATE' THEN Update_priv
-            WHEN 'DELETE' THEN Delete_priv
-            WHEN 'CREATE' THEN Create_priv
-            WHEN 'DROP' THEN Drop_priv
-            WHEN 'RELOAD' THEN Reload_priv
-            WHEN 'SHUTDOWN' THEN Shutdown_priv
-            WHEN 'PROCESS' THEN Process_priv
-            WHEN 'FILE' THEN File_priv
-            WHEN 'REFERENCES' THEN References_priv
-            WHEN 'INDEX' THEN Index_priv
-            WHEN 'ALTER' THEN Alter_priv
-            WHEN 'SHOW DATABASES' THEN Show_db_priv
-            WHEN 'SUPER' THEN Super_priv
-            WHEN 'CREATE TEMPORARY TABLES' THEN Create_tmp_table_priv
-            WHEN 'LOCK TABLES' THEN Lock_tables_priv
-            WHEN 'EXECUTE' THEN Execute_priv
-            WHEN 'REPLICATION SLAVE' THEN Repl_slave_priv
-            WHEN 'REPLICATION CLIENT' THEN Repl_client_priv
-            WHEN 'CREATE VIEW' THEN Create_view_priv
-            WHEN 'SHOW VIEW' THEN Show_view_priv
-            WHEN 'CREATE ROUTINE' THEN Create_routine_priv
-            WHEN 'ALTER ROUTINE' THEN Alter_routine_priv
-            WHEN 'CREATE USER' THEN Create_user_priv
-            WHEN 'EVENT' THEN Event_priv
-            WHEN 'TRIGGER' THEN Trigger_priv
-            WHEN 'CREATE TABLESPACE' THEN Create_tablespace_priv
+        WHERE CASE privilege
+            WHEN 'SELECT' THEN u.Select_priv
+            WHEN 'INSERT' THEN u.Insert_priv
+            WHEN 'UPDATE' THEN u.Update_priv
+            WHEN 'DELETE' THEN u.Delete_priv
+            WHEN 'CREATE' THEN u.Create_priv
+            WHEN 'DROP' THEN u.Drop_priv
+            WHEN 'RELOAD' THEN u.Reload_priv
+            WHEN 'SHUTDOWN' THEN u.Shutdown_priv
+            WHEN 'PROCESS' THEN u.Process_priv
+            WHEN 'FILE' THEN u.File_priv
+            WHEN 'REFERENCES' THEN u.References_priv
+            WHEN 'INDEX' THEN u.Index_priv
+            WHEN 'ALTER' THEN u.Alter_priv
+            WHEN 'SHOW DATABASES' THEN u.Show_db_priv
+            WHEN 'SUPER' THEN u.Super_priv
+            WHEN 'CREATE TEMPORARY TABLES' THEN u.Create_tmp_table_priv
+            WHEN 'LOCK TABLES' THEN u.Lock_tables_priv
+            WHEN 'EXECUTE' THEN u.Execute_priv
+            WHEN 'REPLICATION SLAVE' THEN u.Repl_slave_priv
+            WHEN 'REPLICATION CLIENT' THEN u.Repl_client_priv
+            WHEN 'CREATE VIEW' THEN u.Create_view_priv
+            WHEN 'SHOW VIEW' THEN u.Show_view_priv
+            WHEN 'CREATE ROUTINE' THEN u.Create_routine_priv
+            WHEN 'ALTER ROUTINE' THEN u.Alter_routine_priv
+            WHEN 'CREATE USER' THEN u.Create_user_priv
+            WHEN 'EVENT' THEN u.Event_priv
+            WHEN 'TRIGGER' THEN u.Trigger_priv
+            WHEN 'CREATE TABLESPACE' THEN u.Create_tablespace_priv
             ELSE 'N'
         END = 'Y'
         ORDER BY grantee, privilege

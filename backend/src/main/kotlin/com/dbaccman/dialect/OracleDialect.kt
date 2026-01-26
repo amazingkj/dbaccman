@@ -79,13 +79,23 @@ class OracleDialect : DatabaseDialect {
 
     override fun getKillSessionSql(pid: Long, serialNum: Long?): String {
         // Oracle requires both SID and SERIAL# to kill a session
-        requireNotNull(serialNum) { "Oracle requires SERIAL# to kill a session" }
+        if (serialNum == null) {
+            throw IllegalArgumentException(
+                "Cannot kill Oracle session (SID: $pid): SERIAL# is required but was not provided. " +
+                "This may occur if the session has already ended. Please refresh the session list and try again."
+            )
+        }
         return "ALTER SYSTEM KILL SESSION '$pid,$serialNum' IMMEDIATE"
     }
 
     override fun getKillQuerySql(pid: Long, serialNum: Long?): String {
         // Oracle requires both SID and SERIAL# to cancel a query
-        requireNotNull(serialNum) { "Oracle requires SERIAL# to cancel a query" }
+        if (serialNum == null) {
+            throw IllegalArgumentException(
+                "Cannot cancel Oracle query (SID: $pid): SERIAL# is required but was not provided. " +
+                "This may occur if the session has already ended. Please refresh the session list and try again."
+            )
+        }
         return "ALTER SYSTEM CANCEL SQL '$pid,$serialNum'"
     }
 
@@ -97,7 +107,8 @@ class OracleDialect : DatabaseDialect {
             'localhost' as host,
             TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
             TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
-            CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked
+            CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked,
+            PROFILE as profile
         FROM DBA_USERS
         WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
         ORDER BY USERNAME
@@ -122,7 +133,8 @@ class OracleDialect : DatabaseDialect {
                 'localhost' as host,
                 TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
                 TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
-                CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked
+                CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked,
+                PROFILE as profile
             FROM DBA_USERS
             WHERE USERNAME NOT IN (${getSystemUsers().joinToString { "'$it'" }})
             $filterClause
@@ -141,6 +153,7 @@ class OracleDialect : DatabaseDialect {
                     TO_CHAR(PASSWORD_CHANGE_DATE, 'YYYY-MM-DD HH24:MI:SS') as password_last_changed,
                     TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE) as password_lifetime,
                     CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END as account_locked,
+                    PROFILE as profile,
                     COUNT(*) OVER() as total_count,
                     SUM(CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END) OVER() as locked_count
                 FROM DBA_USERS
@@ -404,6 +417,36 @@ class OracleDialect : DatabaseDialect {
         "INSERT ANY TABLE",
         "UPDATE ANY TABLE",
         "DELETE ANY TABLE"
+    )
+
+    /**
+     * Validates privileges and returns a pair of (validPrivileges, invalidPrivileges).
+     * Use this for pre-validation before calling getGrantSql/getRevokeSql.
+     */
+    fun validatePrivileges(privileges: List<String>, table: String): Pair<List<String>, List<String>> {
+        val valid = mutableListOf<String>()
+        val invalid = mutableListOf<String>()
+
+        privileges.forEach { priv ->
+            val upper = priv.uppercase()
+            when {
+                isDirectSystemPrivilege(upper) -> valid.add(priv)
+                table == "*" && upper in oracleAnyTablePrivileges -> valid.add(priv)
+                table != "*" && upper in oracleObjectPrivileges -> valid.add(priv)
+                else -> invalid.add(priv)
+            }
+        }
+
+        return Pair(valid, invalid)
+    }
+
+    /**
+     * Returns all valid Oracle privileges for reference.
+     */
+    fun getValidPrivileges(): Map<String, Set<String>> = mapOf(
+        "systemPrivileges" to oracleDirectSystemPrivileges,
+        "objectPrivileges" to oracleObjectPrivileges,
+        "anyTablePrivileges" to oracleAnyTablePrivileges
     )
 
     // Map MySQL privileges to Oracle equivalents for object-level grants

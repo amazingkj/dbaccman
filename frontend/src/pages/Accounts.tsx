@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Typography,
@@ -138,6 +138,7 @@ function Accounts() {
   const [passwordForm] = Form.useForm()
   const [cloneForm] = Form.useForm()
   const [searchText, setSearchText] = useState('')
+  const deferredSearchText = useDeferredValue(searchText)
 
   // SQL injection validation
   const createFormValidation = useFormValidation()
@@ -422,10 +423,10 @@ function Accounts() {
     setCloneModalOpen(true)
   }
 
-  // Search filter function (memoized)
+  // Search filter function (memoized) - uses deferred value for non-blocking filtering
   const filterBySearch = useCallback((account: Account) => {
-    if (!searchText) return true
-    const search = searchText.toLowerCase()
+    if (!deferredSearchText) return true
+    const search = deferredSearchText.toLowerCase()
 
     if (searchColumn === 'all') {
       const status = account.accountLocked ? 'locked' : 'active'
@@ -445,7 +446,7 @@ function Accounts() {
     const value = account[searchColumn as keyof Account]
     if (value === null || value === undefined) return false
     return value.toString().toLowerCase().includes(search)
-  }, [searchText, searchColumn])
+  }, [deferredSearchText, searchColumn])
 
   // Memoize filtered accounts (server-side filtering for expiring/locked, client-side for search only)
   const filteredAccounts = useMemo(() => {
@@ -454,6 +455,8 @@ function Accounts() {
   }, [accounts, filterBySearch])
 
   // Memoize columns to prevent unnecessary re-renders
+  const isOracle = dbType?.toUpperCase() === 'ORACLE'
+
   const columns = useMemo(() => [
     {
       title: '#',
@@ -481,6 +484,15 @@ function Accounts() {
       width: 120,
       ellipsis: true,
     },
+    // Oracle-only: Profile column
+    ...(isOracle ? [{
+      title: 'Profile',
+      dataIndex: 'profile',
+      key: 'profile',
+      width: 120,
+      ellipsis: true,
+      render: (profile: string | null) => profile || '-',
+    }] : []),
     {
       title: 'Password Expiry',
       dataIndex: 'passwordLifetime',
@@ -573,7 +585,7 @@ function Accounts() {
         )
       },
     },
-  ], [pagination.page, pagination.pageSize, sortBy, sortOrder])
+  ], [pagination.page, pagination.pageSize, sortBy, sortOrder, isOracle])
 
   return (
     <div>
@@ -804,7 +816,20 @@ function Accounts() {
             rules={[
               { required: true, message: 'Please enter password' },
               { min: 8, message: 'Password must be at least 8 characters' },
+              {
+                pattern: /[a-zA-Z]/,
+                message: 'Password must contain at least one letter',
+              },
+              {
+                pattern: /\d/,
+                message: 'Password must contain at least one digit',
+              },
+              {
+                pattern: /[!@#$%^&*()_+\-=\[\]{}|;':",./<>?]/,
+                message: 'Password must contain at least one special character',
+              },
             ]}
+            extra="8+ characters with letter, digit, and special character (!@#$%^&*)"
             validateStatus={createFormValidation.getFieldValidation('password')?.severity === 'danger' ? 'error' : undefined}
           >
             <Input.Password
@@ -883,8 +908,12 @@ function Accounts() {
             rules={[
               { required: true, message: 'Please enter new password' },
               { min: 8, message: 'Password must be at least 8 characters' },
+              { pattern: /[a-zA-Z]/, message: 'Password must contain at least one letter' },
+              { pattern: /\d/, message: 'Password must contain at least one digit' },
+              { pattern: /[!@#$%^&*()_+\-=\[\]{}|;':",./<>?]/, message: 'Password must contain at least one special character' },
             ]}
             validateStatus={passwordFormValidation.getFieldValidation('password')?.severity === 'danger' ? 'error' : undefined}
+            extra="8+ characters with letter, digit, and special character (!@#$%^&*)"
           >
             <Input.Password
               placeholder="Enter new password"
@@ -972,8 +1001,12 @@ function Accounts() {
             rules={[
               { required: true, message: 'Please enter password' },
               { min: 8, message: 'Password must be at least 8 characters' },
+              { pattern: /[a-zA-Z]/, message: 'Password must contain at least one letter' },
+              { pattern: /\d/, message: 'Password must contain at least one digit' },
+              { pattern: /[!@#$%^&*()_+\-=\[\]{}|;':",./<>?]/, message: 'Password must contain at least one special character' },
             ]}
             validateStatus={cloneFormValidation.getFieldValidation('newPassword')?.severity === 'danger' ? 'error' : undefined}
+            extra="8+ characters with letter, digit, and special character (!@#$%^&*)"
           >
             <Input.Password
               placeholder="Enter password"

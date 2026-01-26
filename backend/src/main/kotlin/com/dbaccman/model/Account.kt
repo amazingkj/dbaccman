@@ -9,7 +9,8 @@ data class Account(
     val created: String? = null,
     val passwordLastChanged: String? = null,
     val passwordLifetime: Int? = null,
-    val accountLocked: Boolean = false
+    val accountLocked: Boolean = false,
+    val profile: String? = null  // Oracle only: user profile name
 )
 
 @Serializable

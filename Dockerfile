@@ -15,8 +15,17 @@ RUN gradle shadowJar --no-daemon -x test
 # Stage 3: Runtime
 FROM eclipse-temurin:21-jre-alpine
 
+# Security: Add labels
+LABEL maintainer="dbaccman" \
+      version="1.0" \
+      description="Database Account Manager" \
+      org.opencontainers.image.source="https://github.com/jiin724/dbaccman"
+
 # Create non-root user for security
 RUN addgroup -g 1001 appgroup && adduser -u 1001 -G appgroup -D appuser
+
+# Install curl for healthcheck (smaller than wget)
+RUN apk add --no-cache curl
 
 WORKDIR /app
 
@@ -32,11 +41,17 @@ USER appuser
 
 EXPOSE 12080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
-    CMD wget -q --spider http://localhost:12080/health || exit 1
+# Health check using curl
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:12080/health || exit 1
 
-ENTRYPOINT ["java", "-Xmx512m", "-jar", "app.jar"]
+# JVM security and performance options
+ENTRYPOINT ["java", \
+    "-Xmx512m", \
+    "-XX:+UseContainerSupport", \
+    "-XX:MaxRAMPercentage=75.0", \
+    "-Djava.security.egd=file:/dev/./urandom", \
+    "-jar", "app.jar"]
 
 # docker tag jiin724/dbaccman:latest jiin724/dbaccman:1.0.0
 # docker push jiin724/dbaccman:latest

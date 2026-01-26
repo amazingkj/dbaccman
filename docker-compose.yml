@@ -15,6 +15,22 @@ services:
     restart: unless-stopped
     networks:
       - dbaccman-network
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    # Read-only root filesystem (logs volume is writable)
+    read_only: true
+    tmpfs:
+      - /tmp:size=100M,mode=1777
 
 networks:
   dbaccman-network:

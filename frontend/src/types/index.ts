@@ -66,6 +66,7 @@ export interface Account {
   passwordLastChanged: string | null
   passwordLifetime: number | null
   accountLocked: boolean
+  profile: string | null  // Oracle only: user profile name
 }
 
 export interface CreateAccountRequest {

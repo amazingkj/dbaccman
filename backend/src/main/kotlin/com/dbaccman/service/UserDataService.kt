@@ -1,5 +1,6 @@
 package com.dbaccman.service
 
+import com.dbaccman.config.SessionConnectionManager
 import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.dialect.MySQLDialect
 import com.dbaccman.dialect.OracleDialect
@@ -340,10 +341,11 @@ class UserDataService {
 
                         val executionTime = System.currentTimeMillis() - startTime
 
+                        val sessionInfo = SessionConnectionManager.getSessionInfo(sessionId)
                         AuditLogger.logQuery(
-                            user = "user",  // TODO: Get actual username from session
+                            user = sessionInfo?.username ?: "unknown",
                             query = trimmedQuery.take(500),
-                            database = null,
+                            database = sessionInfo?.host,
                             ipAddress = null,
                             success = true
                         )
@@ -362,10 +364,11 @@ class UserDataService {
                     val affectedRows = stmt.executeUpdate(trimmedQuery)
                     val executionTime = System.currentTimeMillis() - startTime
 
+                    val sessionInfo = SessionConnectionManager.getSessionInfo(sessionId)
                     AuditLogger.logQuery(
-                        user = "user",  // TODO: Get actual username from session
+                        user = sessionInfo?.username ?: "unknown",
                         query = trimmedQuery.take(500),
-                        database = null,
+                        database = sessionInfo?.host,
                         ipAddress = null,
                         success = true
                     )

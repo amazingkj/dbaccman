@@ -39,8 +39,9 @@ export async function initCsrfToken(): Promise<void> {
   try {
     const response = await axios.get('/api/auth/csrf-token', { withCredentials: true })
     csrfToken = response.data.csrfToken
-  } catch (error) {
-    console.error('Failed to fetch CSRF token:', error)
+  } catch {
+    // CSRF token fetch failed - will retry on next request
+    // This is expected when not logged in
   }
 }
 

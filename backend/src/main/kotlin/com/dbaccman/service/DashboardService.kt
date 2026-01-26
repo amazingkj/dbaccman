@@ -2,11 +2,13 @@ package com.dbaccman.service
 
 import com.dbaccman.model.*
 import kotlinx.coroutines.*
+import org.slf4j.LoggerFactory
 import kotlin.math.max
 import kotlin.math.min
 
 class DashboardService {
 
+    private val logger = LoggerFactory.getLogger(DashboardService::class.java)
     private val accountService = AccountService()
     private val sessionService = SessionService()
     private val tableService = TableService()
@@ -33,6 +35,9 @@ class DashboardService {
             try {
                 tablespaceService.getTablespaces(sessionId)
             } catch (e: Exception) {
+                // Tablespace query may fail due to insufficient privileges or unsupported DB features
+                logger.debug("Failed to fetch tablespaces for dashboard (session: {}): {}. This is non-critical.",
+                    sessionId, e.message)
                 emptyList()
             }
         }

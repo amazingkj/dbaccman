@@ -2,14 +2,18 @@ package com.dbaccman.service
 
 import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.dialect.MySQLDialect
+import com.dbaccman.dialect.OracleDialect
 import com.dbaccman.dialect.PostgreSQLDialect
 import com.dbaccman.model.GrantPermissionRequest
 import com.dbaccman.model.Permission
 import com.dbaccman.model.RevokePermissionRequest
 import com.dbaccman.util.AuditLogger
 import com.dbaccman.util.InputValidator
+import org.slf4j.LoggerFactory
 
 class PermissionService {
+
+    private val logger = LoggerFactory.getLogger(PermissionService::class.java)
 
     fun getUserPermissions(sessionId: String, username: String, host: String): List<Permission> {
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
@@ -161,6 +165,19 @@ class PermissionService {
         InputValidator.validateTableName(request.table)
 
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            // For Oracle, pre-validate privileges and warn about invalid ones
+            if (dialect is OracleDialect) {
+                val (validPrivs, invalidPrivs) = dialect.validatePrivileges(request.privileges, request.table)
+                if (invalidPrivs.isNotEmpty()) {
+                    logger.warn(
+                        "Oracle grant to {}@{}: Ignoring invalid privileges {} (valid for {}: {})",
+                        request.username, request.host, invalidPrivs,
+                        if (request.table == "*") "schema-level" else "table-level",
+                        validPrivs
+                    )
+                }
+            }
+
             val sql = dialect.getGrantSql(
                 privileges = request.privileges,
                 database = request.database,
@@ -267,6 +284,19 @@ class PermissionService {
         InputValidator.validateTableName(request.table)
 
         useSessionConnectionWithDialect(sessionId) { conn, dialect ->
+            // For Oracle, pre-validate privileges and warn about invalid ones
+            if (dialect is OracleDialect) {
+                val (validPrivs, invalidPrivs) = dialect.validatePrivileges(request.privileges, request.table)
+                if (invalidPrivs.isNotEmpty()) {
+                    logger.warn(
+                        "Oracle revoke from {}@{}: Ignoring invalid privileges {} (valid for {}: {})",
+                        request.username, request.host, invalidPrivs,
+                        if (request.table == "*") "schema-level" else "table-level",
+                        validPrivs
+                    )
+                }
+            }
+
             val sql = dialect.getRevokeSql(
                 privileges = request.privileges,
                 database = request.database,

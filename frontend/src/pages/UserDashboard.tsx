@@ -25,9 +25,8 @@ function UserDashboard() {
       try {
         const response = await authApi.getPasswordExpiry()
         setExpiryInfo(response.data)
-      } catch (err) {
+      } catch {
         setError('Failed to load password expiry information')
-        console.error('Failed to fetch password expiry:', err)
       } finally {
         setLoading(false)
       }

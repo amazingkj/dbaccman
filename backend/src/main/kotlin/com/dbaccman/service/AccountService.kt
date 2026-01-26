@@ -566,12 +566,20 @@ class AccountService {
     }
 
     private fun mapResultSetToAccount(rs: ResultSet): Account {
+        // Try to get profile column (Oracle only) - returns null if column doesn't exist
+        val profile = try {
+            rs.getString("profile")
+        } catch (e: SQLException) {
+            null
+        }
+
         return Account(
             username = rs.getString("username"),
             host = rs.getString("host"),
             passwordLastChanged = rs.getString("password_last_changed")?.ifEmpty { null },
             passwordLifetime = rs.getObject("password_lifetime")?.let { (it as Number).toInt() }?.takeIf { it > 0 },
-            accountLocked = rs.getBoolean("account_locked")
+            accountLocked = rs.getBoolean("account_locked"),
+            profile = profile
         )
     }
 

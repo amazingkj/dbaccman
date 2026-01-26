@@ -5,6 +5,12 @@ import com.auth0.jwt.algorithms.Algorithm
 import io.ktor.server.application.*
 import io.ktor.server.auth.*
 import io.ktor.server.auth.jwt.*
+import org.slf4j.LoggerFactory
+
+private val logger = LoggerFactory.getLogger("JwtConfig")
+
+// Default secret that should NOT be used in production
+private const val DEFAULT_JWT_SECRET = "dbaccman-jwt-secret-key-change-in-production"
 
 object JwtConfig {
     lateinit var secret: String
@@ -41,9 +47,21 @@ object JwtConfig {
 
 fun Application.configureJwt() {
     val config = environment.config
+    val jwtSecret = config.property("jwt.secret").getString()
+
+    // Validate JWT secret - warn if using default in production
+    if (jwtSecret == DEFAULT_JWT_SECRET) {
+        logger.warn("=" .repeat(80))
+        logger.warn("SECURITY WARNING: Using default JWT secret!")
+        logger.warn("This is insecure for production environments.")
+        logger.warn("Set JWT_SECRET environment variable to a secure random string.")
+        logger.warn("=" .repeat(80))
+    } else if (jwtSecret.length < 32) {
+        logger.warn("JWT secret is shorter than 32 characters. Consider using a longer secret.")
+    }
 
     JwtConfig.init(
-        secret = config.property("jwt.secret").getString(),
+        secret = jwtSecret,
         issuer = config.property("jwt.issuer").getString(),
         audience = config.property("jwt.audience").getString(),
         realm = config.property("jwt.realm").getString(),

@@ -155,6 +155,7 @@ object InputValidator {
 
     /**
      * Validates password strength.
+     * Requires: minimum 8 chars, letter, digit, special character.
      * @throws ValidationException if password is weak
      */
     fun validatePassword(password: String) {
@@ -172,7 +173,7 @@ object InputValidator {
             )
         }
 
-        // Check for at least one letter and one digit
+        // Check for at least one letter
         if (!password.any { it.isLetter() }) {
             throw ValidationException(
                 "Password must contain at least one letter",
@@ -180,9 +181,19 @@ object InputValidator {
             )
         }
 
+        // Check for digit
         if (!password.any { it.isDigit() }) {
             throw ValidationException(
                 "Password must contain at least one digit",
+                "password"
+            )
+        }
+
+        // Check for special character
+        val specialChars = "!@#\$%^&*()_+-=[]{}|;':\",./<>?"
+        if (!password.any { it in specialChars }) {
+            throw ValidationException(
+                "Password must contain at least one special character (!@#\$%^&*()_+-=[]{}|;':\",./<>?)",
                 "password"
             )
         }
