@@ -56,7 +56,7 @@ class QueryService {
     ): QueryResult {
         val rowLimit = (limit ?: DEFAULT_ROWS).coerceIn(1, MAX_ROWS)
         val queryTimeout = (timeoutSeconds ?: DEFAULT_QUERY_TIMEOUT_SECONDS).coerceIn(1, MAX_QUERY_TIMEOUT_SECONDS)
-        // Validate query
+        // Validate the full query first (length, emptiness)
         validateQuery(query)
 
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
@@ -85,6 +85,9 @@ class QueryService {
             if (statements.isEmpty()) {
                 throw IllegalArgumentException("No valid SQL statements found")
             }
+
+            // Validate each individual statement for dangerous patterns
+            statements.forEach { stmt -> validateStatementPatterns(stmt) }
 
             try {
                 // If single statement, execute normally
@@ -261,9 +264,11 @@ class QueryService {
         if (trimmedQuery.length > 10000) {
             throw IllegalArgumentException("Query too long (max 10000 characters)")
         }
+    }
 
+    private fun validateStatementPatterns(statement: String) {
         for (pattern in DANGEROUS_PATTERNS) {
-            if (pattern.containsMatchIn(trimmedQuery)) {
+            if (pattern.containsMatchIn(statement)) {
                 throw IllegalArgumentException("This operation is not allowed for safety reasons")
             }
         }
@@ -271,12 +276,22 @@ class QueryService {
 
     private fun isSelectQuery(query: String): Boolean {
         val upperQuery = query.uppercase().trim()
-        return upperQuery.startsWith("SELECT") ||
-               upperQuery.startsWith("SHOW") ||
-               upperQuery.startsWith("DESCRIBE") ||
-               upperQuery.startsWith("DESC") ||
-               upperQuery.startsWith("EXPLAIN") ||
-               upperQuery.startsWith("WITH")  // CTE that typically ends with SELECT
+        if (upperQuery.startsWith("SELECT") ||
+            upperQuery.startsWith("SHOW") ||
+            upperQuery.startsWith("DESCRIBE") ||
+            upperQuery.startsWith("DESC") ||
+            upperQuery.startsWith("EXPLAIN")) {
+            return true
+        }
+        // CTE: WITH ... SELECT is read-only, but WITH ... INSERT/UPDATE/DELETE is not
+        if (upperQuery.startsWith("WITH")) {
+            // Find the main statement after the CTE(s) by matching the last closing paren
+            val afterCte = upperQuery.replace(Regex("\\s+"), " ")
+            // Check if it contains DML keywords after the CTE definition
+            val dmlPattern = Regex("\\)\\s*(INSERT|UPDATE|DELETE|MERGE)\\s")
+            return !dmlPattern.containsMatchIn(afterCte)
+        }
+        return false
     }
 
     /**

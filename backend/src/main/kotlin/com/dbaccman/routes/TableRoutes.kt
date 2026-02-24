@@ -1,6 +1,7 @@
 package com.dbaccman.routes
 
 import com.dbaccman.service.TableService
+import com.dbaccman.util.InputValidator
 import com.dbaccman.util.getSessionId
 import com.dbaccman.util.handleAdminRoute
 import io.ktor.server.application.*
@@ -32,6 +33,7 @@ fun Route.tableRoutes() {
                     val sessionId = call.getSessionId()
                     val database = call.parameters["database"]
                         ?: throw IllegalArgumentException("Database not specified")
+                    InputValidator.validateIdentifier(database, "database")
                     val tables = tableService.getTables(sessionId, database)
                     call.respond(tables)
                 }
@@ -44,6 +46,8 @@ fun Route.tableRoutes() {
                         ?: throw IllegalArgumentException("Database not specified")
                     val table = call.parameters["table"]
                         ?: throw IllegalArgumentException("Table not specified")
+                    InputValidator.validateIdentifier(database, "database")
+                    InputValidator.validateIdentifier(table, "table")
                     val columns = tableService.getTableColumns(sessionId, database, table)
                     call.respond(columns)
                 }
@@ -56,6 +60,8 @@ fun Route.tableRoutes() {
                         ?: throw IllegalArgumentException("Database not specified")
                     val table = call.parameters["table"]
                         ?: throw IllegalArgumentException("Table not specified")
+                    InputValidator.validateIdentifier(database, "database")
+                    InputValidator.validateIdentifier(table, "table")
                     val indexes = tableService.getIndexes(sessionId, database, table)
                     call.respond(indexes)
                 }
@@ -68,8 +74,10 @@ fun Route.tableRoutes() {
                         ?: throw IllegalArgumentException("Database not specified")
                     val table = call.parameters["table"]
                         ?: throw IllegalArgumentException("Table not specified")
+                    InputValidator.validateIdentifier(database, "database")
+                    InputValidator.validateIdentifier(table, "table")
                     val limit = call.request.queryParameters["limit"]?.toIntOrNull() ?: 100
-                    val data = tableService.getTableData(sessionId, database, table, limit)
+                    val data = tableService.getTableData(sessionId, database, table, limit.coerceIn(1, 1000))
                     call.respond(data)
                 }
             }
@@ -79,7 +87,9 @@ fun Route.tableRoutes() {
                     val sessionId = call.getSessionId()
                     val database = call.parameters["database"]
                         ?: throw IllegalArgumentException("Database not specified")
+                    InputValidator.validateIdentifier(database, "database")
                     val table = call.request.queryParameters["table"]
+                    table?.let { InputValidator.validateIdentifier(it, "table") }
                     val success = tableService.gatherStats(sessionId, database, table)
                     call.respond(mapOf("success" to success))
                 }

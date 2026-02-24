@@ -16,13 +16,19 @@ export const accountsApi = {
   list: () =>
     apiClient.get<Account[]>('/accounts'),
 
-  listPaginated: (page: number, pageSize: number, sortBy?: string, sortOrder?: 'asc' | 'desc', filter?: string) => {
+  listPaginated: (page: number, pageSize: number, sortBy?: string, sortOrder?: 'asc' | 'desc', filter?: string, search?: string, searchColumn?: string) => {
     let url = `/accounts?page=${page}&pageSize=${pageSize}`
     if (sortBy) {
       url += `&sortBy=${sortBy}&sortOrder=${sortOrder || 'asc'}`
     }
     if (filter) {
       url += `&filter=${filter}`
+    }
+    if (search) {
+      url += `&search=${encodeURIComponent(search)}`
+    }
+    if (searchColumn && searchColumn !== 'all') {
+      url += `&searchColumn=${encodeURIComponent(searchColumn)}`
     }
     return apiClient.get<PaginatedAccountsResponse>(url)
   },

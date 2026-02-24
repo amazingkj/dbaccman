@@ -4,6 +4,7 @@ import com.dbaccman.dialect.DatabaseDialect
 import com.dbaccman.dialect.DatabaseType
 import com.dbaccman.dialect.DialectFactory
 import com.dbaccman.dialect.OracleDialect
+import com.dbaccman.service.TableService
 import com.dbaccman.util.CircuitBreakerRegistry
 import com.dbaccman.util.CircuitBreakerOpenException
 import com.dbaccman.util.HikariMonitor
@@ -212,6 +213,7 @@ object SessionConnectionManager {
     fun closeSession(sessionId: String) {
         sessionPools.remove(sessionId)?.let { pool ->
             try {
+                TableService.clearCache(sessionId)
                 pool.dataSource.close()
                 logger.info("Closed session $sessionId for ${pool.username}@${pool.host}:${pool.port} (${pool.dbType.displayName})")
             } catch (e: Exception) {
@@ -237,6 +239,9 @@ object SessionConnectionManager {
         if (expiredSessions.isNotEmpty()) {
             logger.info("Cleaned up ${expiredSessions.size} expired sessions")
         }
+
+        // Clean up TTL-expired metadata cache entries from TableService
+        TableService.cleanupExpiredEntries()
     }
 
     /**

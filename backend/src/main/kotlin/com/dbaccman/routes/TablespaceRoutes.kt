@@ -3,6 +3,7 @@ package com.dbaccman.routes
 import com.dbaccman.model.CreateTablespaceRequest
 import com.dbaccman.model.TableLocationRequest
 import com.dbaccman.service.TablespaceService
+import com.dbaccman.util.InputValidator
 import com.dbaccman.util.getSessionId
 import com.dbaccman.util.handleAdminRoute
 import com.dbaccman.util.handleAdminMutationRoute
@@ -43,6 +44,7 @@ fun Route.tablespaceRoutes() {
                     val sessionId = call.getSessionId()
                     val name = call.parameters["name"]
                         ?: throw IllegalArgumentException("Tablespace name not specified")
+                    InputValidator.validateIdentifier(name, "tablespace")
                     tablespaceService.dropTablespace(sessionId, name)
                     call.respond(MessageResponse("Tablespace dropped successfully"))
                 }
@@ -53,6 +55,7 @@ fun Route.tablespaceRoutes() {
                     val sessionId = call.getSessionId()
                     val name = call.parameters["name"]
                         ?: throw IllegalArgumentException("Tablespace name not specified")
+                    InputValidator.validateIdentifier(name, "tablespace")
                     val tables = tablespaceService.getTablesInTablespace(sessionId, name)
                     call.respond(tables)
                 }

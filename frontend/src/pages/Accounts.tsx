@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, useDeferredValue } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Typography,
@@ -42,6 +42,7 @@ import { formatToLocalTime } from '../utils/dateUtils'
 import { useAuthStore } from '../store/authStore'
 import { StatCard, STAT_CARD_STYLES } from '../components/common/StatCard'
 import { SqlWarning } from '../components/common/SqlWarning'
+import { useDebounce } from '../hooks/useDebounce'
 import { useFormValidation } from '../hooks/useInputValidation'
 import type { Account, CreateAccountRequest, ExpiringAccount, CloneAccountRequest, BatchOperationResult, PaginationInfo, AccountStats } from '../types'
 
@@ -138,13 +139,13 @@ function Accounts() {
   const [passwordForm] = Form.useForm()
   const [cloneForm] = Form.useForm()
   const [searchText, setSearchText] = useState('')
-  const deferredSearchText = useDeferredValue(searchText)
+  const debouncedSearchText = useDebounce(searchText, 300)
+  const [searchColumn, setSearchColumn] = useState<string>('all')
 
   // SQL injection validation
   const createFormValidation = useFormValidation()
   const passwordFormValidation = useFormValidation()
   const cloneFormValidation = useFormValidation()
-  const [searchColumn, setSearchColumn] = useState<string>('all')
 
   // Pagination state
   const [pagination, setPagination] = useState<PaginationInfo>({
@@ -163,17 +164,19 @@ function Accounts() {
   const [sortBy, setSortBy] = useState<string | undefined>(undefined)
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc')
 
-  const fetchAccounts = async (
+  const fetchAccounts = useCallback(async (
     page = pagination.page,
     pageSize = pagination.pageSize,
     currentSortBy = sortBy,
     currentSortOrder = sortOrder,
-    currentFilter?: string
+    currentFilter?: string,
+    currentSearch?: string,
+    currentSearchColumn?: string
   ) => {
     setLoading(true)
     try {
       const [paginatedRes, expiringRes] = await Promise.all([
-        accountsApi.listPaginated(page, pageSize, currentSortBy, currentSortOrder, currentFilter),
+        accountsApi.listPaginated(page, pageSize, currentSortBy, currentSortOrder, currentFilter, currentSearch, currentSearchColumn),
         accountsApi.getExpiring(30),
       ])
       setAccounts(paginatedRes.data.data)
@@ -185,10 +188,13 @@ function Accounts() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
   // Determine current filter from URL params
   const currentFilter = showExpiring ? 'expiring' : showLocked ? 'locked' : undefined
+
+  // Track previous search values to avoid duplicate fetches
+  const prevSearchRef = useRef<{ text: string; column: string }>({ text: '', column: 'all' })
 
   useEffect(() => {
     // When showing expiring accounts, default sort by passwordLifetime ascending (soonest first)
@@ -200,8 +206,19 @@ function Accounts() {
       setSortOrder('asc')
     }
 
-    fetchAccounts(1, pagination.pageSize, defaultSortBy, defaultSortOrder, currentFilter)
+    prevSearchRef.current = { text: debouncedSearchText, column: searchColumn }
+    fetchAccounts(1, pagination.pageSize, defaultSortBy, defaultSortOrder, currentFilter, debouncedSearchText || undefined, searchColumn)
   }, [currentFilter])
+
+  // Re-fetch when search text or column changes (debounced)
+  useEffect(() => {
+    // Skip if this is the initial render or if values haven't changed from filter effect
+    if (prevSearchRef.current.text === debouncedSearchText && prevSearchRef.current.column === searchColumn) {
+      return
+    }
+    prevSearchRef.current = { text: debouncedSearchText, column: searchColumn }
+    fetchAccounts(1, pagination.pageSize, sortBy, sortOrder, currentFilter, debouncedSearchText || undefined, searchColumn)
+  }, [debouncedSearchText, searchColumn])
 
   const handleCreate = async (values: CreateAccountRequest & { privileges?: string[] }) => {
     try {
@@ -233,6 +250,7 @@ function Accounts() {
 
       setCreateModalOpen(false)
       form.resetFields()
+      setSearchText('')
       fetchAccounts(1, pagination.pageSize) // Go to first page after create
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } }
@@ -264,7 +282,7 @@ function Accounts() {
     try {
       await accountsApi.delete(account.username, account.host)
       message.success('Account deleted successfully')
-      fetchAccounts(pagination.page, pagination.pageSize)
+      fetchAccounts(pagination.page, pagination.pageSize, sortBy, sortOrder, currentFilter, debouncedSearchText || undefined, searchColumn)
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } }
       const errorMsg = err.response?.data?.error || 'Failed to delete account'
@@ -276,7 +294,7 @@ function Accounts() {
     try {
       await accountsApi.unlock(account.username, account.host)
       message.success('Account unlocked successfully')
-      fetchAccounts(pagination.page, pagination.pageSize)
+      fetchAccounts(pagination.page, pagination.pageSize, sortBy, sortOrder, currentFilter, debouncedSearchText || undefined, searchColumn)
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } }
       const errorMsg = err.response?.data?.error || 'Failed to unlock account'
@@ -292,6 +310,7 @@ function Accounts() {
       setCloneModalOpen(false)
       cloneForm.resetFields()
       setSelectedAccount(null)
+      setSearchText('')
       fetchAccounts(1, pagination.pageSize) // Go to first page to see new account
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } }
@@ -317,7 +336,7 @@ function Accounts() {
       setBatchResult(result.data)
       setBatchResultModalOpen(true)
       setSelectedRowKeys([])
-      fetchAccounts(pagination.page, pagination.pageSize)
+      fetchAccounts(pagination.page, pagination.pageSize, sortBy, sortOrder, currentFilter, debouncedSearchText || undefined, searchColumn)
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } }
       const errorMsg = err.response?.data?.error || 'Failed to batch delete accounts'
@@ -342,7 +361,7 @@ function Accounts() {
       setBatchResult(result.data)
       setBatchResultModalOpen(true)
       setSelectedRowKeys([])
-      fetchAccounts(pagination.page, pagination.pageSize)
+      fetchAccounts(pagination.page, pagination.pageSize, sortBy, sortOrder, currentFilter, debouncedSearchText || undefined, searchColumn)
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string } } }
       const errorMsg = err.response?.data?.error || 'Failed to batch unlock accounts'
@@ -359,10 +378,8 @@ function Accounts() {
           selectedRowKeys.includes(`${account.username}@${account.host}`)
         )
 
-        // Generate CSV
-        const headers = includePermissions
-          ? ['Username', 'Host', 'Status', 'Password Expiry', 'Last Password Change']
-          : ['Username', 'Host', 'Status', 'Password Expiry', 'Last Password Change']
+        // Generate CSV (client-side export for selected accounts doesn't include permissions)
+        const headers = ['Username', 'Host', 'Status', 'Password Expiry', 'Last Password Change']
 
         const rows = selectedAccounts.map(account => [
           account.username,
@@ -423,37 +440,6 @@ function Accounts() {
     setCloneModalOpen(true)
   }
 
-  // Search filter function (memoized) - uses deferred value for non-blocking filtering
-  const filterBySearch = useCallback((account: Account) => {
-    if (!deferredSearchText) return true
-    const search = deferredSearchText.toLowerCase()
-
-    if (searchColumn === 'all') {
-      const status = account.accountLocked ? 'locked' : 'active'
-      return (
-        account.username?.toLowerCase().includes(search) ||
-        account.host?.toLowerCase().includes(search) ||
-        account.passwordLastChanged?.toLowerCase().includes(search) ||
-        status.includes(search)
-      )
-    }
-
-    if (searchColumn === 'status') {
-      const status = account.accountLocked ? 'locked' : 'active'
-      return status.includes(search)
-    }
-
-    const value = account[searchColumn as keyof Account]
-    if (value === null || value === undefined) return false
-    return value.toString().toLowerCase().includes(search)
-  }, [deferredSearchText, searchColumn])
-
-  // Memoize filtered accounts (server-side filtering for expiring/locked, client-side for search only)
-  const filteredAccounts = useMemo(() => {
-    // Server already filters for expiring/locked, just apply client-side search filter
-    return accounts.filter(filterBySearch)
-  }, [accounts, filterBySearch])
-
   // Memoize columns to prevent unnecessary re-renders
   const isOracle = dbType?.toUpperCase() === 'ORACLE'
 
@@ -491,6 +477,8 @@ function Accounts() {
       key: 'profile',
       width: 120,
       ellipsis: true,
+      sorter: true,
+      sortOrder: sortBy === 'profile' ? (sortOrder === 'asc' ? 'ascend' as const : 'descend' as const) : null,
       render: (profile: string | null) => profile || '-',
     }] : []),
     {
@@ -585,7 +573,7 @@ function Accounts() {
         )
       },
     },
-  ], [pagination.page, pagination.pageSize, sortBy, sortOrder, isOracle])
+  ], [pagination.page, pagination.pageSize, sortBy, sortOrder, isOracle, debouncedSearchText, searchColumn, currentFilter])
 
   return (
     <div>
@@ -613,9 +601,9 @@ function Accounts() {
           </Title>
           <Text type="secondary">
             {showExpiring
-              ? `Showing ${filteredAccounts.length} account(s) expiring within 30 days`
+              ? `Showing ${pagination.totalItems} account(s) expiring within 30 days`
               : showLocked
-              ? `Showing ${filteredAccounts.length} locked account(s)`
+              ? `Showing ${pagination.totalItems} locked account(s)`
               : 'Database user account management'}
           </Text>
         </div>
@@ -678,7 +666,7 @@ function Accounts() {
             >
               Create Account
             </Button>
-            <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts(pagination.page, pagination.pageSize, sortBy, sortOrder, currentFilter)}>
+            <Button icon={<ReloadOutlined />} onClick={() => fetchAccounts(pagination.page, pagination.pageSize, sortBy, sortOrder, currentFilter, debouncedSearchText || undefined, searchColumn)}>
               Refresh
             </Button>
             {selectedRowKeys.length > 0 && (
@@ -724,6 +712,7 @@ function Accounts() {
               <Select.Option value="all">All</Select.Option>
               <Select.Option value="username">Username</Select.Option>
               <Select.Option value="host">Host</Select.Option>
+              {isOracle && <Select.Option value="profile">Profile</Select.Option>}
               <Select.Option value="status">Status</Select.Option>
             </Select>
             <Input.Search
@@ -739,7 +728,7 @@ function Accounts() {
 
       <Table
         columns={columns}
-        dataSource={filteredAccounts}
+        dataSource={accounts}
         loading={loading}
         rowKey={(record) => `${record.username}@${record.host}`}
         pagination={{
@@ -761,13 +750,15 @@ function Accounts() {
           setSortBy(newSortBy)
           setSortOrder(newSortOrder as 'asc' | 'desc')
 
-          // Fetch with new page/sort parameters (include current filter)
+          // Fetch with new page/sort parameters (include current filter and search)
           fetchAccounts(
             paginationConfig.current || 1,
             paginationConfig.pageSize || 15,
             newSortBy,
             newSortOrder as 'asc' | 'desc',
-            currentFilter
+            currentFilter,
+            debouncedSearchText || undefined,
+            searchColumn
           )
         }}
         rowSelection={{

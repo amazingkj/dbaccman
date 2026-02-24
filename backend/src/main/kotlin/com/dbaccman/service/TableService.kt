@@ -18,6 +18,15 @@ class TableService {
             databasesCache.keys.filter { it.startsWith(sessionId) }.forEach { databasesCache.remove(it) }
             tablesCache.keys.filter { it.startsWith(sessionId) }.forEach { tablesCache.remove(it) }
         }
+
+        /**
+         * Remove all expired cache entries (TTL-based cleanup).
+         * Called periodically to prevent memory leaks from stale session entries.
+         */
+        fun cleanupExpiredEntries() {
+            databasesCache.entries.removeIf { it.value.isExpired() }
+            tablesCache.entries.removeIf { it.value.isExpired() }
+        }
     }
 
     private data class CachedResult<T>(val data: T, val timestamp: Long) {

@@ -14,7 +14,7 @@ class DashboardService {
     private val tableService = TableService()
     private val tablespaceService = TablespaceService()
 
-    fun getDashboardStats(sessionId: String): DashboardStats = runBlocking {
+    suspend fun getDashboardStats(sessionId: String): DashboardStats = coroutineScope {
         // 병렬 실행: 독립적인 쿼리들을 동시에 실행
         val accountStatsDeferred = async(Dispatchers.IO) {
             accountService.getPaginatedAccounts(sessionId, 1, 1)

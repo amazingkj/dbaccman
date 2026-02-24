@@ -49,7 +49,8 @@ class AccountService {
                 "username" to "USERNAME",
                 "passwordLastChanged" to "PASSWORD_CHANGE_DATE",
                 "passwordLifetime" to "TRUNC(EXPIRY_DATE - PASSWORD_CHANGE_DATE)",
-                "accountLocked" to "ACCOUNT_STATUS"
+                "accountLocked" to "CASE WHEN ACCOUNT_STATUS LIKE '%LOCKED%' THEN 1 ELSE 0 END",
+                "profile" to "PROFILE"
             )
             is MySQLDialect -> mapOf(
                 "username" to "user",
@@ -100,26 +101,59 @@ class AccountService {
     }
 
     /**
-     * Get filtered count for pagination
+     * Build search WHERE clause for server-side search.
+     * Returns a SQL fragment like "AND (LOWER(col1) LIKE ? OR LOWER(col2) LIKE ?)"
+     * For "status" column, returns a static clause (no LIKE parameters).
      */
-    private fun getFilteredCount(conn: java.sql.Connection, dialect: DatabaseDialect, filter: String?): Int {
-        val baseCountQuery = dialect.getAccountCountQuery()
-        val filterClause = buildFilterClause(filter, dialect)
+    private fun buildSearchClause(search: String?, searchColumn: String?, dialect: DatabaseDialect): String {
+        if (search.isNullOrBlank()) return ""
 
-        // Inject filter clause before any trailing clauses
-        val filteredCountQuery = if (filterClause.isNotEmpty()) {
-            baseCountQuery.replace(
-                Regex("(WHERE .+?)(\$)", RegexOption.DOT_MATCHES_ALL),
-                "$1 $filterClause$2"
-            )
-        } else {
-            baseCountQuery
+        // Status search: match against locked/active state (no LIKE params needed)
+        if (searchColumn == "status") {
+            val isLocked = search.lowercase().let { it.contains("lock") || it.contains("잠") }
+            return when (dialect) {
+                is OracleDialect -> if (isLocked) "AND ACCOUNT_STATUS LIKE '%LOCKED%'" else "AND ACCOUNT_STATUS NOT LIKE '%LOCKED%'"
+                is MySQLDialect -> if (isLocked) "AND account_locked = 'Y'" else "AND account_locked = 'N'"
+                is PostgreSQLDialect -> if (isLocked) "AND rolcanlogin = false" else "AND rolcanlogin = true"
+                else -> ""
+            }
         }
 
-        return conn.createStatement().use { stmt ->
-            stmt.executeQuery(filteredCountQuery).use { rs ->
-                if (rs.next()) rs.getInt("count") else 0
-            }
+        // Text search: build LIKE clause for searchable columns
+        val columnMapping = when (dialect) {
+            is OracleDialect -> mapOf("username" to "USERNAME", "profile" to "PROFILE")
+            is MySQLDialect -> mapOf("username" to "user", "host" to "host")
+            is PostgreSQLDialect -> mapOf("username" to "usename")
+            else -> return ""
+        }
+
+        val columnsToSearch = when {
+            searchColumn == null || searchColumn == "all" -> columnMapping.values.toList()
+            columnMapping.containsKey(searchColumn) -> listOf(columnMapping[searchColumn]!!)
+            else -> columnMapping.values.toList()
+        }
+
+        return "AND (" + columnsToSearch.joinToString(" OR ") { "LOWER($it) LIKE ?" } + ")"
+    }
+
+    /**
+     * Get the number of LIKE parameters needed for a search clause.
+     */
+    private fun getSearchParamCount(search: String?, searchColumn: String?, dialect: DatabaseDialect): Int {
+        if (search.isNullOrBlank()) return 0
+        if (searchColumn == "status") return 0 // Status uses static clause
+
+        val columnMapping = when (dialect) {
+            is OracleDialect -> mapOf("username" to "USERNAME", "profile" to "PROFILE")
+            is MySQLDialect -> mapOf("username" to "user", "host" to "host")
+            is PostgreSQLDialect -> mapOf("username" to "usename")
+            else -> return 0
+        }
+
+        return when {
+            searchColumn == null || searchColumn == "all" -> columnMapping.size
+            columnMapping.containsKey(searchColumn) -> 1
+            else -> columnMapping.size
         }
     }
 
@@ -133,7 +167,9 @@ class AccountService {
         pageSize: Int,
         sortBy: String? = null,
         sortOrder: String = "asc",
-        filter: String? = null
+        filter: String? = null,
+        search: String? = null,
+        searchColumn: String? = null
     ): PaginatedAccountsResponse {
         val isContainerRoot = SessionConnectionManager.isContainerRoot(sessionId)
 
@@ -141,22 +177,37 @@ class AccountService {
             val offset = (page - 1) * pageSize
             val orderByClause = buildOrderByClause(sortBy, sortOrder, dialect)
             val filterClause = buildFilterClause(filter, dialect)
+            val searchClause = buildSearchClause(search, searchColumn, dialect)
+
+            // Combine filter and search clauses
+            val combinedFilterClause = if (searchClause.isNotEmpty()) "$filterClause $searchClause" else filterClause
 
             // Use optimized query that returns total_count and locked_count via window functions
-            val sql = dialect.getOptimizedPaginatedAccountsQuery(orderByClause, filterClause)
+            val sql = dialect.getOptimizedPaginatedAccountsQuery(orderByClause, combinedFilterClause)
 
             var totalCount = 0
             var lockedCount = 0
 
             val accounts = conn.prepareStatement(sql).use { stmt ->
+                var paramIndex = 1
+
+                // Set search LIKE parameters
+                val searchParamCount = getSearchParamCount(search, searchColumn, dialect)
+                if (searchParamCount > 0) {
+                    val searchPattern = "%${search!!.lowercase()}%"
+                    repeat(searchParamCount) {
+                        stmt.setString(paramIndex++, searchPattern)
+                    }
+                }
+
                 // Oracle uses OFFSET first, then FETCH (limit)
                 // MySQL/PostgreSQL use LIMIT first, then OFFSET
                 if (dialect is OracleDialect) {
-                    stmt.setInt(1, offset)
-                    stmt.setInt(2, pageSize)
+                    stmt.setInt(paramIndex++, offset)
+                    stmt.setInt(paramIndex, pageSize)
                 } else {
-                    stmt.setInt(1, pageSize)
-                    stmt.setInt(2, offset)
+                    stmt.setInt(paramIndex++, pageSize)
+                    stmt.setInt(paramIndex, offset)
                 }
 
                 stmt.executeQuery().use { rs ->

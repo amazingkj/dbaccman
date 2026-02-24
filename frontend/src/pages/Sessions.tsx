@@ -720,7 +720,7 @@ function Sessions() {
       >
         <Card
           style={{ background: '#1e1e1e', borderRadius: 8 }}
-          bodyStyle={{ padding: 16 }}
+          styles={{ body: { padding: 16 } }}
         >
           <Paragraph
             copyable={{ text: selectedQuery || '' }}

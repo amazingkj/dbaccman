@@ -445,7 +445,16 @@ function Permissions() {
               <Button
                 type="primary"
                 icon={<PlusOutlined />}
-                onClick={() => setGrantModalOpen(true)}
+                onClick={() => {
+                  form.setFieldsValue({
+                    username: selectedAccount?.split('@')[0],
+                    host: selectedAccount?.split('@')[1] || '%',
+                    table: '*',
+                    grantType: 'object',
+                    privileges: [],
+                  })
+                  setGrantModalOpen(true)
+                }}
                 disabled={!selectedAccount}
               >
                 Grant Permission

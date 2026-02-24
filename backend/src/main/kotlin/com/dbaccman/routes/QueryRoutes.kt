@@ -5,6 +5,7 @@ import com.dbaccman.config.useSessionConnectionWithDialect
 import com.dbaccman.service.QueryExecutionException
 import com.dbaccman.service.QueryService
 import com.dbaccman.util.AuditLogger
+import com.dbaccman.util.InputValidator
 import com.dbaccman.util.getClientIp
 import com.dbaccman.util.getSessionId
 import com.dbaccman.util.getUsername
@@ -209,6 +210,14 @@ fun Route.queryRoutes() {
 
                 if (request.schema.isBlank()) {
                     call.respond(HttpStatusCode.BadRequest, ApiErrorResponse("Schema name cannot be empty"))
+                    return@post
+                }
+
+                // Validate schema name against SQL injection
+                try {
+                    InputValidator.validateIdentifier(request.schema, "schema")
+                } catch (e: Exception) {
+                    call.respond(HttpStatusCode.BadRequest, ApiErrorResponse(e.message ?: "Invalid schema name"))
                     return@post
                 }
 
