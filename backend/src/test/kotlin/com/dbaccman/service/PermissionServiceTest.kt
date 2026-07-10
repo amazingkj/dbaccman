@@ -524,6 +524,7 @@ class PermissionServiceTest {
             every { SessionConnectionManager.getDialect("test-session") } returns mockDialect
             every { SessionConnectionManager.getConnection("test-session") } returns mockConnection
 
+            every { mockDialect.validatePrivileges(listOf("CREATE SESSION"), "*") } returns Pair(listOf("CREATE SESSION"), emptyList())
             every { mockDialect.getGrantSql(listOf("CREATE SESSION"), "", "*", "testuser", "%") } returns "GRANT CREATE SESSION TO TESTUSER"
             every { mockDialect.getFlushPrivilegesSql() } returns null
 

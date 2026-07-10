@@ -59,6 +59,17 @@ class QueryService {
         // Validate the full query first (length, emptiness)
         validateQuery(query)
 
+        // Split statements and validate each for dangerous patterns up front,
+        // before borrowing a connection or switching schema - fail fast
+        // without any database interaction
+        val statements = splitStatements(query)
+
+        if (statements.isEmpty()) {
+            throw IllegalArgumentException("No valid SQL statements found")
+        }
+
+        statements.forEach { stmt -> validateStatementPatterns(stmt) }
+
         return useSessionConnectionWithDialect(sessionId) { conn, dialect ->
             val startTime = System.currentTimeMillis()
 
@@ -78,16 +89,6 @@ class QueryService {
                     }
                 }
             }
-
-            // Split by semicolons to support multiple statements
-            val statements = splitStatements(query)
-
-            if (statements.isEmpty()) {
-                throw IllegalArgumentException("No valid SQL statements found")
-            }
-
-            // Validate each individual statement for dangerous patterns
-            statements.forEach { stmt -> validateStatementPatterns(stmt) }
 
             try {
                 // If single statement, execute normally

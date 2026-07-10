@@ -638,6 +638,7 @@ class QueryServiceTest {
             every { mockDialect.getSwitchSchemaSql(any()) } returns null
             every { mockConnection.createStatement() } returns mockStatement
             every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.queryTimeout = any() } just Runs
             every { mockStatement.executeQuery(any()) } returns mockResultSet
             every { mockResultSet.metaData } returns mockMetaData
             every { mockMetaData.columnCount } returns 2
@@ -677,6 +678,7 @@ class QueryServiceTest {
             every { SessionConnectionManager.isContainerRoot("test-session") } returns false
             every { mockDialect.getSwitchSchemaSql(any()) } returns null
             every { mockConnection.createStatement() } returns mockStatement
+            every { mockStatement.queryTimeout = any() } just Runs
             every { mockStatement.executeUpdate(any()) } returns 5
             every { mockStatement.close() } just Runs
             every { mockConnection.close() } just Runs
@@ -769,6 +771,7 @@ class QueryServiceTest {
 
             // Second createStatement is for the actual query
             every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.queryTimeout = any() } just Runs
             every { mockStatement.executeQuery(any()) } returns mockResultSet
             every { mockResultSet.metaData } returns mockMetaData
             every { mockMetaData.columnCount } returns 1
@@ -813,6 +816,7 @@ class QueryServiceTest {
             every { mockDialect.getSwitchSchemaSql(any()) } returns null
             every { mockConnection.createStatement() } returns mockStatement
             every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.queryTimeout = any() } just Runs
             every { mockStatement.executeQuery(any()) } returns mockResultSet
             every { mockResultSet.metaData } returns mockMetaData
             every { mockMetaData.columnCount } returns 1
@@ -854,6 +858,7 @@ class QueryServiceTest {
             every { SessionConnectionManager.isContainerRoot("test-session") } returns false
             every { mockConnection.createStatement() } returns mockStatement
             every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.queryTimeout = any() } just Runs
             every { mockStatement.executeQuery(any()) } returns mockResultSet
             every { mockResultSet.metaData } returns mockMetaData
             every { mockMetaData.columnCount } returns 1
@@ -935,6 +940,7 @@ class QueryServiceTest {
             every { mockSwitchStatement.close() } just Runs
 
             every { mockStatement.maxRows = any() } just Runs
+            every { mockStatement.queryTimeout = any() } just Runs
             every { mockStatement.executeQuery(any()) } returns mockResultSet
             every { mockResultSet.metaData } returns mockMetaData
             every { mockMetaData.columnCount } returns 2
