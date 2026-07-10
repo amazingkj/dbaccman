@@ -157,6 +157,7 @@ fun Application.module() {
             sessionRoutes()
             tableRoutes()
             tablespaceRoutes()
+            provisioningRoutes()
             queryRoutes()
             dashboardRoutes()
             roleRoutes()

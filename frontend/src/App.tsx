@@ -14,6 +14,7 @@ const Permissions = lazy(() => import('./pages/Permissions'))
 const Sessions = lazy(() => import('./pages/Sessions'))
 const Tables = lazy(() => import('./pages/Tables'))
 const Tablespaces = lazy(() => import('./pages/Tablespaces'))
+const Provisioning = lazy(() => import('./pages/Provisioning'))
 const SqlConsole = lazy(() => import('./pages/SqlConsole'))
 const MyTables = lazy(() => import('./pages/MyTables'))
 const MyTablespaces = lazy(() => import('./pages/MyTablespaces'))
@@ -54,6 +55,7 @@ function App() {
             <Route path="sessions" element={<AdminRoute><Sessions /></AdminRoute>} />
             <Route path="tables" element={<AdminRoute><Tables /></AdminRoute>} />
             <Route path="tablespaces" element={<AdminRoute><Tablespaces /></AdminRoute>} />
+            <Route path="provisioning" element={<AdminRoute><Provisioning /></AdminRoute>} />
             <Route path="sql-console" element={<AdminRoute><SqlConsole /></AdminRoute>} />
             {/* User routes (own schema only) */}
             <Route path="my-tables" element={<MyTables />} />

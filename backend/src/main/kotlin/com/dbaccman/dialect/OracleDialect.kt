@@ -728,6 +728,54 @@ class OracleDialect : DatabaseDialect {
         return "DROP TABLESPACE ${quoteIdentifier(name)} INCLUDING CONTENTS AND DATAFILES"
     }
 
+    // ==================== Provisioning ====================
+
+    /**
+     * Returns SQL to create a permanent tablespace with an explicit datafile and size.
+     * Names are uppercased and left unquoted (standard Oracle folding) so that
+     * subsequent unquoted references (CREATE USER ... DEFAULT TABLESPACE) match.
+     */
+    fun getCreateDataTablespaceSql(name: String, filePath: String, size: String, autoExtend: Boolean = false): String {
+        val autoExtendClause = if (autoExtend) " AUTOEXTEND ON NEXT 100M MAXSIZE UNLIMITED" else ""
+        return "CREATE TABLESPACE ${formatOracleUsername(name)} DATAFILE '$filePath' SIZE $size$autoExtendClause"
+    }
+
+    /**
+     * Returns SQL to create a temporary tablespace with an explicit tempfile and size.
+     */
+    fun getCreateTempTablespaceSql(name: String, filePath: String, size: String): String {
+        return "CREATE TEMPORARY TABLESPACE ${formatOracleUsername(name)} TEMPFILE '$filePath' SIZE $size"
+    }
+
+    /**
+     * Returns SQL to create a user with default and temporary tablespaces in one statement.
+     */
+    fun getCreateUserWithTablespaceSql(
+        username: String,
+        password: String,
+        defaultTablespace: String,
+        tempTablespace: String
+    ): String {
+        return "CREATE USER ${formatOracleUsername(username)} IDENTIFIED BY \"${escapePassword(password)}\"" +
+            " DEFAULT TABLESPACE ${formatOracleUsername(defaultTablespace)}" +
+            " TEMPORARY TABLESPACE ${formatOracleUsername(tempTablespace)}"
+    }
+
+    /**
+     * Returns SQL to set a tablespace quota using unquoted uppercase names,
+     * matching tablespaces created via getCreateDataTablespaceSql.
+     */
+    fun getSetQuotaSql(username: String, tablespace: String, quota: String): String {
+        return "ALTER USER ${formatOracleUsername(username)} QUOTA $quota ON ${formatOracleUsername(tablespace)}"
+    }
+
+    /**
+     * Returns SQL to assign an existing profile to a user.
+     */
+    fun getAssignProfileSql(username: String, profile: String): String {
+        return "ALTER USER ${formatOracleUsername(username)} PROFILE ${formatOracleUsername(profile)}"
+    }
+
     override fun getTablesInTablespaceQuery(): String = """
         SELECT
             t.OWNER as db_name,

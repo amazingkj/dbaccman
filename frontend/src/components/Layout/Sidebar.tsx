@@ -9,6 +9,7 @@ import {
   HddOutlined,
   CodeOutlined,
   DatabaseOutlined,
+  RocketOutlined,
 } from '@ant-design/icons'
 import { useAuthStore } from '../../store/authStore'
 
@@ -38,6 +39,11 @@ function Sidebar({ collapsed, onCollapse }: SidebarProps) {
           key: '/accounts',
           icon: <UserOutlined />,
           label: 'Accounts',
+        },
+        {
+          key: '/provisioning',
+          icon: <RocketOutlined />,
+          label: 'Provisioning',
         },
         {
           key: '/permissions',

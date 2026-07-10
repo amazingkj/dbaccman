@@ -441,6 +441,54 @@ class PostgreSQLDialect : DatabaseDialect {
         return "DROP TABLESPACE IF EXISTS ${quoteIdentifier(name)}"
     }
 
+    // ==================== Provisioning ====================
+
+    /**
+     * Returns SQL to create a user with role options in one statement,
+     * e.g. CREATE USER "app" WITH LOGIN CREATEDB PASSWORD '...'
+     */
+    fun getCreateUserWithOptionsSql(
+        username: String,
+        password: String,
+        createDb: Boolean = false,
+        createRole: Boolean = false,
+        replication: Boolean = false
+    ): String {
+        val options = buildString {
+            append("LOGIN")
+            if (createDb) append(" CREATEDB")
+            if (createRole) append(" CREATEROLE")
+            if (replication) append(" REPLICATION")
+        }
+        return "CREATE USER ${quoteIdentifier(username)} WITH $options PASSWORD '${escapePassword(password)}'"
+    }
+
+    /**
+     * Returns SQL to create a tablespace owned by a specific user.
+     * The location directory must already exist on the server.
+     */
+    fun getCreateOwnedTablespaceSql(name: String, owner: String, location: String): String {
+        return "CREATE TABLESPACE ${quoteIdentifier(name)} OWNER ${quoteIdentifier(owner)} LOCATION '$location'"
+    }
+
+    /**
+     * Returns SQL to create a database with owner, encoding, tablespace, and connection limit.
+     * Must be executed outside a transaction block (autocommit).
+     */
+    fun getCreateDatabaseSql(
+        name: String,
+        owner: String,
+        encoding: String,
+        tablespace: String,
+        connectionLimit: Int
+    ): String {
+        return "CREATE DATABASE ${quoteIdentifier(name)}" +
+            " WITH OWNER = ${quoteIdentifier(owner)}" +
+            " ENCODING = '$encoding'" +
+            " TABLESPACE = ${quoteIdentifier(tablespace)}" +
+            " CONNECTION LIMIT = $connectionLimit"
+    }
+
     override fun getTablesInTablespaceQuery(): String = """
         SELECT
             n.nspname as db_name,

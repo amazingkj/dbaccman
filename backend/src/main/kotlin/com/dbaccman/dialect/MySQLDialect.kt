@@ -522,6 +522,22 @@ class MySQLDialect : DatabaseDialect {
         return "DROP TABLESPACE ${quoteIdentifier(name)}"
     }
 
+    // ==================== Provisioning ====================
+
+    /**
+     * Returns SQL to create a database with an explicit character set.
+     */
+    fun getCreateDatabaseSql(name: String, charset: String = "utf8mb4"): String {
+        return "CREATE DATABASE ${quoteIdentifier(name)} CHARACTER SET $charset"
+    }
+
+    /**
+     * Returns SQL to grant all privileges on a database to a user.
+     */
+    fun getGrantAllOnDatabaseSql(database: String, username: String, host: String): String {
+        return "GRANT ALL PRIVILEGES ON ${quoteIdentifier(database)}.* TO ${quoteIdentifier(username)}@${quoteIdentifier(host)}"
+    }
+
     override fun getTablesInTablespaceQuery(): String = """
         SELECT
             t.TABLE_SCHEMA as db_name,

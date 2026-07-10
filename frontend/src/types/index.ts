@@ -263,6 +263,75 @@ export interface TableLocationRequest {
   tablespaceName: string
 }
 
+// Provisioning Types
+export interface OracleProvisionOptions {
+  dataTablespace: string
+  dataFilePath: string
+  dataSize: string
+  indexTablespace?: string | null
+  indexFilePath?: string | null
+  indexSize: string
+  tempTablespace: string
+  tempFilePath: string
+  tempSize: string
+  autoExtend: boolean
+  roles: string[]
+  quota: string
+  profile?: string | null
+}
+
+export interface PostgresProvisionOptions {
+  tablespace: string
+  location: string
+  createDb: boolean
+  createRole: boolean
+  replication: boolean
+  databaseName?: string | null
+  encoding: string
+  connectionLimit: number
+}
+
+export interface MySqlProvisionOptions {
+  host: string
+  databaseName?: string | null
+  charset: string
+  grantAllOnDatabase: boolean
+}
+
+export interface ProvisionRequest {
+  username: string
+  password: string
+  oracle?: OracleProvisionOptions
+  postgres?: PostgresProvisionOptions
+  mysql?: MySqlProvisionOptions
+}
+
+export interface ProvisionStep {
+  order: number
+  title: string
+  description: string
+  sql: string
+}
+
+export interface ProvisionPlan {
+  dbType: string
+  steps: ProvisionStep[]
+}
+
+export interface ProvisionStepResult {
+  order: number
+  title: string
+  sql: string
+  status: 'SUCCESS' | 'FAILED' | 'SKIPPED'
+  error?: string | null
+  durationMs: number
+}
+
+export interface ProvisionResult {
+  success: boolean
+  steps: ProvisionStepResult[]
+}
+
 // Pagination Types
 export interface PaginationInfo {
   page: number

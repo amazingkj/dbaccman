@@ -235,6 +235,72 @@ object InputValidator {
     }
 
     /**
+     * Validates a data file / directory path used in DDL (tablespace datafile, location).
+     * Rejects quotes, semicolons, and parent-directory traversal to keep the path
+     * safe for embedding in a single-quoted SQL literal.
+     * @throws ValidationException if invalid
+     */
+    fun validateFilePath(path: String, fieldName: String = "path") {
+        if (path.isBlank()) {
+            throw ValidationException("$fieldName cannot be empty", fieldName)
+        }
+
+        if (path.length > 512) {
+            throw ValidationException("$fieldName exceeds maximum length of 512 characters", fieldName)
+        }
+
+        if (path.contains("..")) {
+            throw ValidationException("$fieldName must not contain '..'", fieldName)
+        }
+
+        // Unix or Windows path characters only - no quotes, semicolons, or whitespace
+        val pathPattern = Regex("^[a-zA-Z0-9_\\-./:\\\\]+$")
+        if (!pathPattern.matches(path)) {
+            throw ValidationException(
+                "$fieldName contains invalid characters. Only alphanumeric characters, underscores, hyphens, dots, and path separators are allowed.",
+                fieldName
+            )
+        }
+    }
+
+    /**
+     * Validates a database encoding name (e.g., UTF8, EUC_KR, LATIN1).
+     * @throws ValidationException if invalid
+     */
+    fun validateEncoding(encoding: String) {
+        if (encoding.isBlank()) {
+            throw ValidationException("Encoding cannot be empty", "encoding")
+        }
+
+        val encodingPattern = Regex("^[a-zA-Z0-9_-]+$")
+        if (!encodingPattern.matches(encoding)) {
+            throw ValidationException(
+                "Invalid encoding name. Only alphanumeric characters, underscores, and hyphens are allowed.",
+                "encoding"
+            )
+        }
+    }
+
+    /**
+     * Validates a tablespace/datafile size (e.g., "100M", "8G", "256M").
+     * Unlike quota, UNLIMITED is not allowed here.
+     * @throws ValidationException if invalid
+     */
+    fun validateSize(size: String, fieldName: String = "size") {
+        if (size.isBlank()) {
+            throw ValidationException("$fieldName cannot be empty", fieldName)
+        }
+
+        val sizePattern = Regex("^\\d+[KMGT]?$")
+        if (!sizePattern.matches(size.uppercase().trim())) {
+            throw ValidationException(
+                "Invalid $fieldName format. Use a number followed by K, M, G, or T (e.g., '256M', '8G').",
+                fieldName
+            )
+        }
+    }
+
+    /**
      * Validates expire days.
      * @throws ValidationException if invalid
      */
